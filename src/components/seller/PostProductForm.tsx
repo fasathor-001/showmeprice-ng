@@ -23,6 +23,11 @@ const getPostKind = (): PostKind => {
 const MAX_IMAGES = 6;
 const MAX_IMAGE_MB = 6;
 
+function nav(to: string) {
+  window.history.pushState({}, "", to);
+  window.dispatchEvent(new Event("smp:navigate"));
+}
+
 function formatMoneyInput(v: string) {
   const digits = String(v || "").replace(/[^\d]/g, "");
   if (!digits) return "";
@@ -374,7 +379,7 @@ export default function PostProductForm({ onClose }: Props) {
   let uploadedUrls: string[] = [];
   if (selectedFiles.length > 0 && uploadImages) {
     try {
-      console.log("UPLOAD_COUNT", selectedFiles.length);
+      if (import.meta.env.DEV) console.log("UPLOAD_COUNT", selectedFiles.length);
       let res: any;
       if (typeof uploadImages === "function" && uploadImages.length >= 2) {
         res = await uploadImages(selectedFiles, businessId);
@@ -382,7 +387,7 @@ export default function PostProductForm({ onClose }: Props) {
         res = await uploadImages(selectedFiles);
       }
       uploadedUrls = normalizeUploaded(res);
-      console.log("UPLOADED_URLS", uploadedUrls);
+      if (import.meta.env.DEV) console.log("UPLOADED_URLS", uploadedUrls);
     } catch (err: any) {
       const msg = err?.message ?? "Image upload failed. Check Storage policies (RLS).";
       setFormError(msg);
@@ -405,7 +410,7 @@ export default function PostProductForm({ onClose }: Props) {
       }
 
       const userId = authData?.user?.id ?? "";
-      console.log("EDIT_UPDATE_TARGET", { editId, businessId, userId });
+      if (import.meta.env.DEV) console.log("EDIT_UPDATE_TARGET", { editId, businessId, userId });
       const nextImages =
         selectedFiles.length > 0
           ? [...(existingImages || []), ...uploadedUrls].slice(0, MAX_IMAGES)
@@ -478,7 +483,7 @@ export default function PostProductForm({ onClose }: Props) {
       deal_season: isDealPost ? seasonLabel : null,
     };
 
-    const { data, error } = await supabase.from("products").insert(payload).select("id").single();
+    const { data, error } = await supabase.from("products").insert(payload).select("id").maybeSingle();
     if (error || !data?.id) {
       const msg = error?.message || "Product not saved. Please try again.";
       setFormError(msg);
@@ -486,7 +491,7 @@ export default function PostProductForm({ onClose }: Props) {
       return;
     }
 
-    console.log("POSTED_PRODUCT_ID", data.id);
+    if (import.meta.env.DEV) console.log("POSTED_PRODUCT_ID", data.id);
     window.dispatchEvent(
       new CustomEvent("smp:toast", {
         detail: { type: "success", message: "✅ Product posted. It’s now live on the marketplace." },

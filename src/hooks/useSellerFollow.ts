@@ -10,8 +10,8 @@ export function useSellerFollow(sellerId?: string | null) {
 
   useEffect(() => {
     let cancelled = false;
-    const sid = String(sellerId ?? "").trim();
-    if (!sid) {
+    const bid = String(sellerId ?? "").trim();
+    if (!bid) {
       setFollowing(false);
       return;
     }
@@ -20,9 +20,9 @@ export function useSellerFollow(sellerId?: string | null) {
       setLoading(true);
       const res = user?.id
         ? await supabase
-            .from("seller_follows")
+            .from("business_follows")
             .select("id")
-            .eq("seller_id", sid)
+            .eq("business_id", bid)
             .eq("user_id", user.id)
             .limit(1)
         : { data: [] as any[] };
@@ -39,8 +39,8 @@ export function useSellerFollow(sellerId?: string | null) {
   }, [sellerId, user?.id]);
 
   const toggleFollow = useCallback(async () => {
-    const sid = String(sellerId ?? "").trim();
-    if (!sid) throw new Error("Missing seller");
+    const bid = String(sellerId ?? "").trim();
+    if (!bid) throw new Error("Missing business");
     if (!user?.id) throw new Error("Login required");
 
     const prev = following;
@@ -50,16 +50,16 @@ export function useSellerFollow(sellerId?: string | null) {
     setFollowing(next);
     try {
       if (next) {
-        const { error } = await supabase.from("seller_follows").insert({
-          seller_id: sid,
+        const { error } = await supabase.from("business_follows").insert({
+          business_id: bid,
           user_id: user.id,
         });
         if (error) throw error;
       } else {
         const { error } = await supabase
-          .from("seller_follows")
+          .from("business_follows")
           .delete()
-          .eq("seller_id", sid)
+          .eq("business_id", bid)
           .eq("user_id", user.id);
         if (error) throw error;
       }

@@ -21,12 +21,12 @@ export function useProductLike(productId?: string | null) {
     const run = async () => {
       setLoading(true);
       const countReq = supabase
-        .from("product_likes")
+        .from("product_saves")
         .select("id", { count: "exact", head: true })
         .eq("product_id", pid);
 
       const likedReq = user?.id
-        ? supabase.from("product_likes").select("id").eq("product_id", pid).eq("user_id", user.id).limit(1)
+        ? supabase.from("product_saves").select("id").eq("product_id", pid).eq("user_id", user.id).limit(1)
         : Promise.resolve({ data: [] as any[] });
 
       const [countRes, likedRes] = await Promise.all([countReq, likedReq]);
@@ -58,14 +58,14 @@ export function useProductLike(productId?: string | null) {
 
     try {
       if (nextLiked) {
-        const { error } = await supabase.from("product_likes").insert({
+        const { error } = await supabase.from("product_saves").insert({
           product_id: pid,
           user_id: user.id,
         });
         if (error) throw error;
       } else {
         const { error } = await supabase
-          .from("product_likes")
+          .from("product_saves")
           .delete()
           .eq("product_id", pid)
           .eq("user_id", user.id);

@@ -38,7 +38,7 @@ export function useImageUpload() {
         const safeName = rawName.replace(/[^\w.-]+/g, "-");
         const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}-${safeName}`;
         const filePath = `${businessId}/${fileName}`;
-        console.log("UPLOAD_KEY", filePath);
+        if (import.meta.env.DEV) console.log("UPLOAD_KEY", filePath);
 
         const { error: uploadError } = await supabase.storage
           .from("products")

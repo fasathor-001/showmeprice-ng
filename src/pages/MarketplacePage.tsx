@@ -125,6 +125,16 @@ function verificationLabelFor(product: ProductWithRelations) {
   return "Unverified";
 }
 
+function businessNameFor(product: ProductWithRelations) {
+  const b = (product as any)?.businesses ?? {};
+  const raw =
+    String((product as any)?.seller_business_name ?? "").trim() ||
+    String(b.business_name ?? "").trim() ||
+    String(b.name ?? "").trim() ||
+    String((product as any)?.business_name ?? "").trim();
+  return raw || "Seller";
+}
+
 export default function MarketplacePage() {
   const { hubs, loading: hubsLoading } = useHubs();
   const [refreshNonce, setRefreshNonce] = useState(0);
@@ -262,6 +272,7 @@ export default function MarketplacePage() {
                   ? `${(product as any)?.city}, ${(product as any)?.states?.name}`
                   : (product as any)?.city || (product as any)?.states?.name || "Nigeria";
               const verificationLabel = verificationLabelFor(product);
+              const sellerName = businessNameFor(product);
 
               return (
                 <button
@@ -302,6 +313,7 @@ export default function MarketplacePage() {
                     </div>
                     <div className="text-sm font-black text-brand mt-1">{formatMoney((product as any).price)}</div>
                     <div className="text-xs text-slate-500 mt-1">{location}</div>
+                    <div className="text-xs text-slate-500 mt-1">{sellerName}</div>
                     <div className="text-xs text-slate-500 mt-1">{verificationLabel}</div>
                   </div>
                 </button>
@@ -335,6 +347,7 @@ export default function MarketplacePage() {
                   ? `${(product as any)?.city}, ${(product as any)?.states?.name}`
                   : (product as any)?.city || (product as any)?.states?.name || "Nigeria";
               const verificationLabel = verificationLabelFor(product);
+              const sellerName = businessNameFor(product);
 
               return (
                 <button
@@ -375,6 +388,7 @@ export default function MarketplacePage() {
                     </div>
                     <div className="text-sm font-black text-brand mt-1">{formatMoney((product as any).price)}</div>
                     <div className="text-xs text-slate-500 mt-1">{location}</div>
+                    <div className="text-xs text-slate-500 mt-1">{sellerName}</div>
                     <div className="text-xs text-slate-500 mt-1">{verificationLabel}</div>
                   </div>
                 </button>

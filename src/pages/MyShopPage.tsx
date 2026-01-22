@@ -1,21 +1,10 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
 import { useProfile } from "../hooks/useProfile";
 import { useFF } from "../hooks/useFF";
 import { useEscrow } from "../hooks/useEscrow";
-import {
-  Plus,
-  Store,
-  CheckCircle2,
-  AlertTriangle,
-  MapPin,
-  BadgeCheck,
-  RefreshCcw,
-  Settings,
-  Eye,
-  Pencil,
-} from "lucide-react";
+import { Plus, Eye, Pencil } from "lucide-react";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -51,6 +40,7 @@ type ListingRow = {
   city: string | null;
   created_at: string;
   images?: string[] | null;
+  status?: string | null;
   condition?: any;
   view_count?: number | null;
   business_id?: string | null;
@@ -58,21 +48,6 @@ type ListingRow = {
 
 function safeStr(v: any) {
   return String(v ?? "").trim();
-}
-
-function isBusinessComplete(biz: any) {
-  const b = biz || {};
-  const whatsapp = safeStr(b.whatsapp_number);
-  return (
-    safeStr(b.business_name).length > 0 &&
-    safeStr(b.business_type).length > 0 &&
-    safeStr(b.city).length > 0 &&
-    safeStr(b.address).length > 0 &&
-    whatsapp.length > 0 &&
-    b.state_id !== null &&
-    b.state_id !== undefined &&
-    safeStr(b.state_id).length > 0
-  );
 }
 
 function formatNairaPrice(v: any) {
@@ -159,23 +134,15 @@ export default function MyShopPage() {
   const [escrowLoading, setEscrowLoading] = useState(false);
   const [shipmentRefs, setShipmentRefs] = useState<Record<string, string>>({});
 
-  const [states, setStates] = useState<any[]>([]);
-
   const [biz, setBiz] = useState<BusinessRow | null>(null);
-  const [bizLoading, setBizLoading] = useState(false);
 
   const [listings, setListings] = useState<ListingRow[]>([]);
   const [listingsLoading, setListingsLoading] = useState(false);
+  const [shopTab, setShopTab] = useState<"listings" | "escrow">("listings");
 
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState<ListingRow | null>(null);
   const [deleting, setDeleting] = useState(false);
-
-  const stateOptions = useMemo(() => {
-    return (Array.isArray(states) ? states : [])
-      .map((s: any) => ({ id: s?.id ?? null, name: String(s?.name ?? "").trim() }))
-      .filter((s) => s.name);
-  }, [states]);
 
   const userType = useMemo(() => {
     const t = (profile as any)?.user_type ?? null;
@@ -184,21 +151,9 @@ export default function MyShopPage() {
 
   const isSeller = profileReady && userType === "seller";
 
-  const shopName = useMemo(() => {
-    const bn = safeStr((biz as any)?.business_name);
-    if (bn) return bn;
-    return "My Shop";
-  }, [biz]);
-
-  const fullName = useMemo(() => {
-    return safeStr((profile as any)?.display_name || (profile as any)?.full_name);
-  }, [profile]);
-
-  const profileStatus = useMemo(() => {
-    if (!isSeller) return "n/a";
-    if (!biz) return "incomplete";
-    return isBusinessComplete(biz) ? "complete" : "incomplete";
-  }, [biz, isSeller]);
+  useEffect(() => {
+    if (!escrowEnabled && shopTab === "escrow") setShopTab("listings");
+  }, [escrowEnabled, shopTab]);
 
   const emitToast = (type: "success" | "error" | "info", message: string) => {
     window.dispatchEvent(new CustomEvent("smp:toast", { detail: { type, message } }));
@@ -223,7 +178,7 @@ export default function MyShopPage() {
         return;
       }
 
-      emitToast("success", "✅ Product deleted.");
+      emitToast("success", "? Product deleted.");
       window.dispatchEvent(
         new CustomEvent("smp:products:refresh", {
           detail: { businessId: String((biz as any)?.id ?? "") },
@@ -235,32 +190,29 @@ export default function MyShopPage() {
     }
   };
 
-  const stateName = useMemo(() => {
-    const id = (biz as any)?.state_id ?? null;
-    const match = stateOptions.find((s) => String(s.id) === String(id));
-    return match?.name ?? "";
-  }, [biz, stateOptions]);
+  const toggleStatus = async (product: ListingRow) => {
+    const current = String(product.status ?? "active");
+    const next = current === "sold" ? "active" : "sold";
+    const { data, error } = await supabase
+      .from("products")
+      .update({ status: next })
+      .eq("id", product.id)
+      .select("id")
+      .maybeSingle();
 
-  const whatsapp = useMemo(() => safeStr((biz as any)?.whatsapp_number), [biz]);
-  const phone = useMemo(() => safeStr((biz as any)?.phone_number), [biz]);
+    if (error || !data?.id) {
+      emitToast("error", error?.message || "Failed to update product status.");
+      return;
+    }
 
-  useEffect(() => {
-    let alive = true;
-    const run = async () => {
-      const { data, error } = await supabase.from("states").select("id,name").order("name", { ascending: true });
-      if (!alive) return;
-      if (error) {
-        console.warn("MyShop: states load error", error);
-        setStates([]);
-      } else {
-        setStates(Array.isArray(data) ? data : []);
-      }
-    };
-    run();
-    return () => {
-      alive = false;
-    };
-  }, []);
+    emitToast("success", next === "sold" ? "? Marked as sold." : "? Marked as available.");
+    window.dispatchEvent(
+      new CustomEvent("smp:products:refresh", {
+        detail: { businessId: String((biz as any)?.id ?? "") },
+      })
+    );
+  };
+
 
   useEffect(() => {
     let alive = true;
@@ -271,7 +223,6 @@ export default function MyShopPage() {
       if (!user?.id) {
         setBiz(null);
         setListings([]);
-        setBizLoading(false);
         setListingsLoading(false);
         return;
       }
@@ -283,7 +234,6 @@ export default function MyShopPage() {
       }
 
       try {
-        setBizLoading(true);
         const { data: bizRows, error: bizErr } = await supabase
           .from("businesses")
           .select(
@@ -300,8 +250,6 @@ export default function MyShopPage() {
         } else {
           setBiz((bizRows?.[0] as any) ?? null);
         }
-        setBizLoading(false);
-
         const b = (bizRows?.[0] as any) ?? null;
         if (!b?.id) {
           setListings([]);
@@ -312,7 +260,7 @@ export default function MyShopPage() {
         setListingsLoading(true);
         const { data: prodRows, error: prodErr } = await supabase
           .from("products")
-          .select("id,title,price,city,created_at,images,condition,view_count,business_id")
+          .select("id,title,price,city,created_at,images,condition,view_count,business_id,status")
           .eq("business_id", b.id)
           .order("created_at", { ascending: false })
           .limit(60);
@@ -331,7 +279,6 @@ export default function MyShopPage() {
         if (!alive) return;
         setBiz(null);
         setListings([]);
-        setBizLoading(false);
         setListingsLoading(false);
       }
     };
@@ -488,199 +435,45 @@ export default function MyShopPage() {
     );
   }
 
-  const needsSetup = !biz || !isBusinessComplete(biz);
-
   return (
     <div className="p-4 md:p-6">
-      <div className="flex items-start justify-between gap-4 mb-6">
-        <div className="min-w-0">
-          <div className="text-2xl font-black text-slate-900 truncate">{shopName}</div>
-          <div className="text-sm text-slate-600 mt-1">
-            Welcome back{fullName ? `, ${fullName}` : ""}. Manage your listings and shop profile.
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            className="px-3 py-2 rounded-xl border bg-white text-slate-900 font-bold hover:bg-slate-50 inline-flex items-center gap-2"
-            onClick={() => setRefreshNonce((n) => n + 1)}
-            title="Refresh"
-          >
-            <RefreshCcw className="w-4 h-4" />
-            Refresh
-          </button>
-
-          <button
-            className="px-3 py-2 rounded-xl border bg-white text-slate-900 font-bold hover:bg-slate-50 inline-flex items-center gap-2"
-            onClick={() => nav("/pricing?view=seller")}
-            title="Upgrade plan"
-          >
-            Upgrade plan
-          </button>
-
-          <button
-            className="px-3 py-2 rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 inline-flex items-center gap-2"
-            onClick={openCreateListingModal}
-            title="Add listing"
-          >
-            <Plus className="w-4 h-4" />
-            Add New Listing
-          </button>
-        </div>
-      </div>
-
-      <div
-        className={cn(
-          "rounded-2xl border p-4 mb-6 flex items-center justify-between gap-3",
-          needsSetup ? "bg-amber-50 border-amber-200" : "bg-emerald-50 border-emerald-200"
-        )}
-      >
-        <div className="flex items-start gap-3 min-w-0">
-          {needsSetup ? (
-            <AlertTriangle className="w-5 h-5 text-amber-700 mt-0.5" />
-          ) : (
-            <CheckCircle2 className="w-5 h-5 text-emerald-700 mt-0.5" />
-          )}
-          <div className="min-w-0">
-            <div className="font-black text-slate-900">
-              {needsSetup ? "Complete your seller profile" : "Seller profile complete"}
-            </div>
-            <div className="text-sm text-slate-700">
-              {needsSetup
-                ? "Add your business name/type, WhatsApp, and address so buyers can trust you."
-                : "Your profile is ready. Keep it updated for better buyer trust."}
-            </div>
-          </div>
-        </div>
-
-        <button
-          className={cn(
-            "px-4 py-2 rounded-xl font-black inline-flex items-center gap-2 whitespace-nowrap",
-            needsSetup ? "bg-slate-900 text-white hover:bg-slate-800" : "bg-white border hover:bg-slate-50"
-          )}
-          onClick={() => nav("/seller/setup")}
-        >
-          <Settings className="w-4 h-4" />
-          {needsSetup ? "Complete setup" : "Edit profile"}
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
-        <div className="rounded-2xl border bg-white p-4">
-          <div className="text-sm text-slate-600 font-bold">Total Listings</div>
-          <div className="text-2xl font-black text-slate-900 mt-1">{listings.length}</div>
-          <div className="text-xs text-slate-500 mt-1">Active listings</div>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-4">
-          <div className="text-sm text-slate-600 font-bold">Account Level</div>
-          <div className="text-2xl font-black text-slate-900 mt-1">
-            {safeStr((profile as any)?.membership_tier || "Basic") || "Basic"}
-          </div>
-          <div className="text-xs text-slate-500 mt-1">Membership tier</div>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-4">
-          <div className="text-sm text-slate-600 font-bold">Verification</div>
-          <div className="text-2xl font-black text-slate-900 mt-1">
-            {safeStr((biz as any)?.verification_tier || "Basic") || "Basic"}
-          </div>
-          <div className="text-xs text-slate-500 mt-1">Seller trust level</div>
-        </div>
-
-        <div className="rounded-2xl border bg-white p-4">
-          <div className="text-sm text-slate-600 font-bold">Profile Status</div>
-          <div className="text-2xl font-black text-slate-900 mt-1 capitalize">{profileStatus}</div>
-          <div className="text-xs text-slate-500 mt-1">{needsSetup ? "Finish setup to unlock full trust." : "All good."}</div>
-        </div>
-      </div>
-
-      <div className="rounded-2xl border bg-white p-5 mb-6">
-        <div className="flex items-center gap-2 font-black text-slate-900">
-          <Store className="w-5 h-5" />
-          Shop Details
-        </div>
-
-        {bizLoading ? (
-          <div className="text-sm text-slate-600 mt-3">Loading shop profile...</div>
-        ) : !biz ? (
-          <div className="mt-3 text-sm text-slate-700">
-            <div className="text-slate-600">We could not find your business record yet.</div>
-            <div className="mt-3 flex gap-2">
-              <button className="px-4 py-2 rounded-xl bg-slate-900 text-white font-bold" onClick={() => nav("/seller/setup")}
-              >
-                Open Seller Setup
-              </button>
-              <button className="px-4 py-2 rounded-xl border bg-white font-bold" onClick={() => setRefreshNonce((n) => n + 1)}
-              >
-                Refresh
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="rounded-xl border p-4">
-              <div className="text-xs font-black text-slate-600">Business</div>
-              <div className="text-lg font-black text-slate-900 mt-1">
-                {safeStr(biz.business_name) || "-"}
-              </div>
-              <div className="text-sm text-slate-600">{safeStr(biz.business_type) || "-"}</div>
-              {!!safeStr((biz as any)?.description) && (
-                <div className="text-sm text-slate-700 mt-3">{safeStr((biz as any)?.description)}</div>
-              )}
-            </div>
-
-            <div className="rounded-xl border p-4">
-              <div className="text-xs font-black text-slate-600">Location</div>
-              <div className="mt-2 flex items-start gap-2 text-slate-800">
-                <MapPin className="w-4 h-4 mt-0.5" />
-                <div className="text-sm">
-                  <div className="font-bold">{safeStr(biz.city) || "-"}{stateName ? `, ${stateName}` : ""}</div>
-                  <div className="text-slate-600">{safeStr(biz.address) || "-"}</div>
-                </div>
-              </div>
-
-              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <div className="text-xs font-black text-slate-600">WhatsApp</div>
-                  <div className="text-slate-800 font-bold">{whatsapp || "-"}</div>
-                </div>
-                <div>
-                  <div className="text-xs font-black text-slate-600">Phone</div>
-                  <div className="text-slate-800 font-bold">{phone || "-"}</div>
-                </div>
-              </div>
-
-              {!!safeStr((biz as any)?.links) && (
-                <div className="mt-3">
-                  <div className="text-xs font-black text-slate-600">Links</div>
-                  <div className="text-sm text-slate-800 break-words">{safeStr((biz as any)?.links)}</div>
-                </div>
-              )}
-            </div>
-
-            <div className="rounded-xl border p-4 md:col-span-2">
-              <div className="flex items-center gap-2">
-                <BadgeCheck className="w-4 h-4" />
-                <div className="text-xs font-black text-slate-600">Verification</div>
-              </div>
-              <div className="mt-2 text-sm text-slate-800">
-                Tier: <span className="font-black">{safeStr((biz as any)?.verification_tier || "Basic") || "Basic"}</span>
-                {"  "}-{"  "}
-                Status: <span className="font-black">{safeStr((biz as any)?.verification_status || "pending") || "pending"}</span>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
       <div className="flex items-center justify-between mb-3">
-        <div className="text-lg font-black text-slate-900">Your Listings</div>
-        <button className="text-emerald-700 font-black hover:underline" onClick={openCreateListingModal}
-        >
-          + Add listing
-        </button>
+        <div className="text-lg font-black text-slate-900">My Shop</div>
+        <div className="inline-flex rounded-xl border bg-white overflow-hidden">
+          <button
+            type="button"
+            className={cn(
+              "px-4 py-2 text-sm font-black",
+              shopTab === "listings" ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-50"
+            )}
+            onClick={() => setShopTab("listings")}
+          >
+            Listings
+          </button>
+          {escrowEnabled ? (
+            <button
+              type="button"
+              className={cn(
+                "px-4 py-2 text-sm font-black border-l",
+                shopTab === "escrow" ? "bg-emerald-600 text-white" : "text-slate-700 hover:bg-slate-50"
+              )}
+              onClick={() => setShopTab("escrow")}
+            >
+              Escrow Orders
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {shopTab === "listings" ? (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-lg font-black text-slate-900">Your Listings</div>
+            <button className="text-emerald-700 font-black hover:underline" onClick={openCreateListingModal}
+            >
+              + Add listing
+            </button>
+          </div>
 
       <div className="rounded-2xl border bg-white p-4">
         {listingsLoading ? (
@@ -774,6 +567,17 @@ export default function MyShopPage() {
                   </button>
                   <button
                     type="button"
+                    className="px-3 py-1.5 rounded-xl border bg-white text-slate-900 font-bold text-xs inline-flex items-center gap-1 hover:bg-slate-50"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleStatus(p);
+                    }}
+                    aria-label={String(p.status ?? "active") === "sold" ? "Mark available" : "Mark sold"}
+                  >
+                    {String(p.status ?? "active") === "sold" ? "Mark Available" : "Mark Sold"}
+                  </button>
+                  <button
+                    type="button"
                     className="px-3 py-1.5 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 font-bold text-xs inline-flex items-center gap-1 hover:bg-rose-100"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -790,6 +594,8 @@ export default function MyShopPage() {
           </div>
         )}
       </div>
+        </>
+      ) : null}
 
       {deleteTarget ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4">
@@ -820,13 +626,13 @@ export default function MyShopPage() {
         </div>
       ) : null}
 
-      {escrowEnabled ? (
+      {shopTab === "escrow" && escrowEnabled ? (
         <div className="mt-6 rounded-2xl border bg-white p-4">
           <div className="text-sm font-black text-slate-700 mb-3">Escrow Orders</div>
           {escrowLoading ? (
             <div className="text-sm text-slate-600">Loading escrow orders...</div>
           ) : escrowOrders.length === 0 ? (
-            <div className="text-sm text-slate-600">No escrow orders yet.</div>
+            <div className="text-sm text-slate-600">No escrow activity yet.</div>
           ) : (
             <div className="grid gap-3">
               {escrowOrders.map((o: any) => {

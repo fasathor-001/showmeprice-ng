@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Heart, Loader2, AlertTriangle, RefreshCw, Search, Trash2, ArrowRight } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../hooks/useAuth";
@@ -12,12 +12,6 @@ function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
-type SavedRow = {
-  id: string;
-  created_at: string;
-  product_id: string;
-};
-
 type ProductRow = {
   id: string;
   title: string;
@@ -29,7 +23,8 @@ type ProductRow = {
 };
 
 type Item = {
-  saved: SavedRow;
+  id: string;
+  created_at: string;
   product: ProductRow;
 };
 
@@ -55,7 +50,7 @@ export default function SavedPage() {
   const [query, setQuery] = useState("");
   const [removingId, setRemovingId] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setError(null);
     setLoading(true);
 
@@ -66,47 +61,23 @@ export default function SavedPage() {
     }
 
     try {
-      // 1) Load saved rows (no join needed)
-      const { data: savedRows, error: sErr } = await supabase
-        .from("saved_items")
-        .select("id,created_at,product_id")
+      const { data, error } = await supabase
+        .from("product_saves")
+        .select("id,created_at,product:products(id,title,price,images,city,state_id,created_at)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false })
         .limit(200);
 
-      if (sErr) throw sErr;
+      if (error) throw error;
 
-      const saved = (savedRows as SavedRow[]) ?? [];
-      const productIds = Array.from(new Set(saved.map((r) => r.product_id).filter(Boolean)));
-
-      if (productIds.length === 0) {
-        setItems([]);
-        setLoading(false);
-        return;
-      }
-
-      // 2) Load products in one query
-      const { data: prodRows, error: pErr } = await supabase
-        .from("products")
-        .select("id,title,price,images,city,state_id,created_at")
-        .in("id", productIds);
-
-      if (pErr) throw pErr;
-
-      const byId: Record<string, ProductRow> = {};
-      ((prodRows as any[]) ?? []).forEach((p) => {
-        if (p?.id) byId[String(p.id)] = p as ProductRow;
-      });
-
-      // 3) Merge, drop saved entries pointing to deleted products
-      const merged: Item[] = saved
-        .map((s) => {
-          const p = byId[String(s.product_id)];
-          if (!p) return null;
-          return { saved: s, product: p };
-        })
-        .filter(Boolean) as Item[];
-
+      const rows = (data ?? []) as Array<{ id: string; created_at: string; product: ProductRow | ProductRow[] | null }>;
+      const merged = rows
+        .map((r) => ({
+          id: r.id,
+          created_at: r.created_at,
+          product: Array.isArray(r.product) ? r.product[0] ?? null : r.product,
+        }))
+        .filter((r) => !!r.product) as Array<{ id: string; created_at: string; product: ProductRow }>;
       setItems(merged);
     } catch (e: any) {
       setItems([]);
@@ -114,12 +85,21 @@ export default function SavedPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [load]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      load();
+    };
+    window.addEventListener("smp:saved:refresh", onRefresh);
+    return () => {
+      window.removeEventListener("smp:saved:refresh", onRefresh);
+    };
+  }, [load]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -140,11 +120,11 @@ export default function SavedPage() {
     if (!user?.id) return;
     setRemovingId(savedId);
     try {
-      const { error } = await supabase.from("saved_items").delete().eq("id", savedId).eq("user_id", user.id);
+      const { error } = await supabase.from("product_saves").delete().eq("id", savedId).eq("user_id", user.id);
       if (error) throw error;
 
       // optimistic update
-      setItems((prev) => prev.filter((x) => x.saved.id !== savedId));
+      setItems((prev) => prev.filter((x) => x.id !== savedId));
     } catch (e: any) {
       alert(e?.message || "Failed to remove saved item.");
     } finally {
@@ -249,7 +229,7 @@ export default function SavedPage() {
               const p = it.product;
               const img = pickImage(p.images);
               return (
-                <div key={it.saved.id} className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
+                <div key={it.id} className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
                   <button
                     type="button"
                     onClick={() => openProduct(p.id)}
@@ -283,11 +263,11 @@ export default function SavedPage() {
 
                       <button
                         type="button"
-                        onClick={() => removeSaved(it.saved.id)}
-                        disabled={removingId === it.saved.id}
+                        onClick={() => removeSaved(it.id)}
+                        disabled={removingId === it.id}
                         className={cn(
                           "px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 font-black inline-flex items-center gap-2",
-                          removingId === it.saved.id && "opacity-60 cursor-not-allowed"
+                          removingId === it.id && "opacity-60 cursor-not-allowed"
                         )}
                         title="Remove from saved"
                       >
@@ -304,3 +284,6 @@ export default function SavedPage() {
     </div>
   );
 }
+
+
+

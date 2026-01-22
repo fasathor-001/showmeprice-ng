@@ -1,6 +1,6 @@
-﻿import React from "react";
-import { useFeatureFlags } from "../../contexts/FeatureFlagsContext";
-type UserContext = "all" | "authenticated" | "premium" | "institution" | "admin";import { useProfile } from "../../hooks/useProfile";
+import React from "react";
+import { useFeatureFlags, type UserContext } from "../../hooks/useFeatureFlags";
+import { useProfile } from "../../hooks/useProfile";
 import { useAuth } from "../../hooks/useAuth";
 import { useMembership } from "../../hooks/useMembership";
 
@@ -34,11 +34,11 @@ export default function FeatureGate({ flagKey, fallback = null, children }: Prop
     return <>{fallback}</>;
   }
 
-  const ctx: UserContext = {
+  const ctx = {
     isAuthenticated: Boolean(user),
     role: (profile as any)?.role ?? null,
     plan: isPremium ? "premium" : (tier === "institution" ? "institution" : "free"),
-  };
+  } satisfies UserContext;
 
   const allowed = isEnabled(flagKey) && canUserSee(flagKey, ctx);
   if (!allowed) return <>{fallback}</>;

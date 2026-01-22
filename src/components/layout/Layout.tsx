@@ -6,6 +6,7 @@ import PostProductForm from "../seller/PostProductForm";
 import GlobalAuthModals from "../auth/GlobalAuthModals";
 
 type LayoutProps = React.PropsWithChildren;
+type TimerId = ReturnType<typeof window.setTimeout>;
 
 function useCurrentPath() {
   const [path, setPath] = useState(() => window.location.pathname);
@@ -28,7 +29,7 @@ export default function Layout({ children }: LayoutProps) {
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: "success" | "error" | "info" }>>(
     []
   );
-  const toastTimersRef = useRef<Record<string, ReturnType<typeof window.setTimeout>>>({});
+  const toastTimersRef = useRef<Record<string, TimerId>>({});
   const path = useCurrentPath();
 
   // ✅ Keep this ONLY for deciding MobileBottomNav + spacing (not for Navbar/Footer)
@@ -84,7 +85,7 @@ export default function Layout({ children }: LayoutProps) {
     window.addEventListener("smp:toast", onToast as EventListener);
     return () => {
       window.removeEventListener("smp:toast", onToast as EventListener);
-      Object.values(toastTimersRef.current).forEach((t) => window.clearTimeout(t));
+      (Object.values(toastTimersRef.current) as TimerId[]).forEach((t) => window.clearTimeout(t));
       toastTimersRef.current = {};
     };
   }, []);

@@ -8,7 +8,17 @@ export type ProductComment = {
   user_id: string;
   body: string;
   created_at: string;
+  public_profiles?: { display_name: string | null; avatar_url: string | null } | null;
 };
+
+function normalizeComment(row: any): ProductComment {
+  const profileRaw = (row as any)?.public_profiles;
+  const profile = Array.isArray(profileRaw) ? profileRaw[0] ?? null : profileRaw ?? null;
+  return {
+    ...(row as ProductComment),
+    public_profiles: profile,
+  };
+}
 
 export function useProductComments(productId?: string | null) {
   const { user } = useAuth();
@@ -25,13 +35,14 @@ export function useProductComments(productId?: string | null) {
     setLoading(true);
     const { data, error } = await supabase
       .from("product_comments")
-      .select("id,product_id,user_id,body,created_at")
+      .select("id,product_id,user_id,body,created_at,public_profiles(display_name,avatar_url)")
       .eq("product_id", pid)
       .order("created_at", { ascending: false });
     setLoading(false);
 
     if (!error) {
-      setComments((data ?? []) as ProductComment[]);
+      const rows = (data ?? []).map((row: any) => normalizeComment(row)) as ProductComment[];
+      setComments(rows);
     }
   }, [productId]);
 
@@ -62,11 +73,11 @@ export function useProductComments(productId?: string | null) {
           user_id: user.id,
           body: text,
         })
-        .select("id,product_id,user_id,body,created_at")
+        .select("id,product_id,user_id,body,created_at,public_profiles(display_name,avatar_url)")
         .limit(1);
       if (error) throw error;
 
-      const row = (data?.[0] ?? null) as ProductComment | null;
+      const row = data?.[0] ? normalizeComment(data[0]) : null;
       if (row) {
         setComments((prev) => [row, ...prev]);
       }

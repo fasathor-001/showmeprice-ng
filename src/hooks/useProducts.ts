@@ -38,11 +38,11 @@ function toErrorMessage(err: any): string {
  * then replace `businesses(...)` below with:
  * `businesses!products_business_id_fkey(business_name, verification_tier)`
  */
-const PRODUCT_SELECT = `
+const PRODUCT_WITH_BUSINESS_SELECT = `
   *,
   states(name),
   categories(name),
-  businesses(id, user_id, business_name, verification_tier, verification_status)
+  businesses:businesses!products_business_id_fkey(id, user_id, business_name, verification_tier, verification_status)
 `;
 
 function imageToPublicUrl(img: string): string {
@@ -119,8 +119,9 @@ export function useRecentProducts(limit = 24, refreshKey?: number): BaseResult<P
 
       const { data, error: e } = await supabase
         .from("products")
-        .select(PRODUCT_SELECT)
+        .select(PRODUCT_WITH_BUSINESS_SELECT)
         .or(NON_DEAL_OR_FILTER)
+        .eq("status", "active")
         .order("created_at", { ascending: false })
         .limit(limit);
 
@@ -175,7 +176,7 @@ export function useDealProducts(opts?: { season?: string | null; limit?: number 
 
       let q = supabase
         .from("products")
-        .select(PRODUCT_SELECT)
+        .select(PRODUCT_WITH_BUSINESS_SELECT)
         .eq("is_deal", true)
         .order("created_at", { ascending: false })
         .limit(limit);
@@ -242,11 +243,12 @@ export function useProductSearch(initial?: Partial<SearchParams>) {
     const from = p.page * p.pageSize;
     const to = from + p.pageSize - 1;
 
-    let q = supabase.from("products").select(PRODUCT_SELECT, { count: "exact" });
+    let q = supabase.from("products").select(PRODUCT_WITH_BUSINESS_SELECT, { count: "exact" });
 
     if (!p.includeDeals) {
       q = q.or(NON_DEAL_OR_FILTER);
     }
+    q = q.eq("status", "active");
 
     if (p.query.trim()) {
       const needle = `%${p.query.trim()}%`;
@@ -372,7 +374,7 @@ export function useSingleProduct(productId: string | number | null) {
 
       const { data, error: e } = await supabase
         .from("products")
-        .select(PRODUCT_SELECT)
+        .select(PRODUCT_WITH_BUSINESS_SELECT)
         .eq("id", productId)
         .limit(1);
 
@@ -423,7 +425,7 @@ export function useSellerProducts(businessId: string | number | null) {
 
     const { data, error: e } = await supabase
       .from("products")
-      .select(PRODUCT_SELECT)
+      .select(PRODUCT_WITH_BUSINESS_SELECT)
       .eq("business_id", businessId)
       .order("created_at", { ascending: false });
 

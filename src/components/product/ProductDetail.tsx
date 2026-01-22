@@ -14,7 +14,6 @@ import { useProductLike } from "../../hooks/useProductLike";
 import { useSellerFollow } from "../../hooks/useSellerFollow";
 import { useProductComments } from "../../hooks/useProductComments";
 import { useReportProduct } from "../../hooks/useReportProduct";
-import { useProfilesByIds } from "../../hooks/useProfilesByIds";
 import { getAccessToken } from "../../lib/getAccessToken";
 import FeatureGate from "../common/FeatureGate";
 import SEO from "../common/SEO";
@@ -59,6 +58,25 @@ function safeText(input: any) {
   return String(input ?? "").trim();
 }
 
+function toTitleCase(input: string) {
+  return input
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function extractBusinessName(rawProduct: any) {
+  const p = rawProduct as any;
+  const direct =
+    safeText(p?.businesses?.business_name) ||
+    safeText(p?.business?.business_name) ||
+    safeText(p?.business_name);
+  if (direct) return direct;
+  const arrName = safeText(p?.businesses?.[0]?.business_name);
+  return arrName || "";
+}
+
 export default function ProductDetail({ product, onClose }: ProductDetailProps) {
   const { user } = useAuth();
   const FF = useFF();
@@ -97,9 +115,11 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   const title = safeText((product as any)?.title);
   const description = safeText((product as any)?.description);
   const condition = safeText((product as any)?.condition ?? "new");
+  const conditionLabel = toTitleCase(condition || "new");
   const createdAt = safeText((product as any)?.created_at);
   const price = (product as any)?.price;
   const originalPrice = (product as any)?.original_price;
+  const isSold = String((product as any)?.status ?? "").toLowerCase() === "sold";
 
   const categoryName = safeText((product as any)?.categories?.name);
 
@@ -107,10 +127,20 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   const cityName = (product as any)?.city ? safeText((product as any).city) : "";
 
   // seller fields
-  const businessName = safeText((product as any)?.businesses?.business_name) || "Seller";
+  const businessName =
+    safeText((product as any)?.seller_business_name) || extractBusinessName(product) || "Seller";
+  const businessId =
+    (product as any)?.business_id ||
+    (product as any)?.businesses?.id ||
+    (product as any)?.business?.id ||
+    null;
 
   // IMPORTANT: requires PRODUCT_SELECT to include businesses(user_id)
-  const sellerUserId = (product as any)?.businesses?.user_id || null;
+  const sellerUserId =
+    (product as any)?.businesses?.user_id ||
+    (product as any)?.business?.user_id ||
+    (product as any)?.owner_id ||
+    null;
   const isOwner = !!sellerUserId && !!user?.id && String(sellerUserId) === String(user.id);
 
   const viewLoggedRef = useRef(false);
@@ -127,15 +157,19 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
     (async () => {
       try {
-        await supabase.from("product_views").insert({
+        const { error } = await supabase.from("product_views").insert({
           product_id: pid,
           viewer_id: user?.id ?? null,
         });
+        if (error?.code && error.code !== "PGRST205" && error.code !== "PGRST116") {
+          // ignore logging errors to avoid breaking product detail view
+        }
       } catch {
         // ignore (e.g., table not created yet, RLS/policy not applied)
       }
     })();
   }, [productId, sellerUserId, user?.id]);
+
 
   const tier = (product as any)?.businesses?.verification_tier || "basic";
   const verificationStatus = String((product as any)?.businesses?.verification_status ?? "").toLowerCase();
@@ -144,8 +178,13 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
     verificationStatus === "approved" ||
     tier === "verified" ||
     tier === "premium";
-  const isSellerPending = verificationStatus === "pending";
+  const isSellerPending = verificationStatus === "pending" || verificationStatus === "in review";
   const isSellerRejected = verificationStatus === "rejected";
+  const verificationTone = isSellerVerified
+    ? "text-emerald-600"
+    : isSellerPending
+    ? "text-amber-600"
+    : "text-red-600";
   const isSellerPremium = tier === "premium";
   const sellerBadgeLabel = isSellerVerified
     ? "Verified"
@@ -205,9 +244,8 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
   // Social hooks
   const { liked, count: likeCount, mutating: likeMutating, toggleLike } = useProductLike(productId);
-  const { following, mutating: followMutating, toggleFollow } = useSellerFollow(sellerUserId);
+  const { following, mutating: followMutating, toggleFollow } = useSellerFollow(businessId);
   const { comments, loading: commentsLoading, addComment } = useProductComments(productId);
-  const { byId: commentProfiles } = useProfilesByIds(comments.map((c) => c.user_id));
 
   // Comments
   const [commentBody, setCommentBody] = useState("");
@@ -251,6 +289,10 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
       return;
     }
     window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode: "login", reason } }));
+  };
+
+  const emitToast = (type: "success" | "error" | "info", message: string) => {
+    window.dispatchEvent(new CustomEvent("smp:toast", { detail: { type, message } }));
   };
 
   const openPricing = (reason?: "contact" | "escrow") => {
@@ -310,6 +352,16 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
         alert("Seller account not available for messaging yet (missing businesses.user_id).");
         return;
       }
+
+      try {
+        sessionStorage.setItem(
+          "smp_initial_chat",
+          JSON.stringify({
+            sellerUserId: String(sellerUserId),
+            productId: productId ? String(productId) : null,
+          })
+        );
+      } catch {}
 
       window.dispatchEvent(
         new CustomEvent("smp:view-inbox", {
@@ -546,20 +598,34 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
   const handleToggleLike = async () => {
     await requireAuthOr(async () => {
+      const nextSaved = !liked;
       try {
         await toggleLike();
+        emitToast("success", nextSaved ? "Saved" : "Removed from saved");
+        window.dispatchEvent(new CustomEvent("smp:saved:refresh"));
       } catch (err: any) {
-        alert(err?.message ?? "Unable to update like.");
+        emitToast("error", err?.message ?? "Unable to update saved items.");
       }
     }, "like");
   };
 
   const handleToggleFollow = async () => {
+    if (!user) {
+      emitToast("info", "Please sign in to follow sellers.");
+      return;
+    }
+    if (!businessId) {
+      emitToast("error", "Seller business not available.");
+      return;
+    }
     await requireAuthOr(async () => {
+      const nextFollow = !following;
       try {
         await toggleFollow();
+        const label = businessName ? ` ${businessName}` : "";
+        emitToast("success", nextFollow ? `Following${label}` : `Unfollowed${label}`);
       } catch (err: any) {
-        alert(err?.message ?? "Unable to update follow.");
+        emitToast("error", err?.message ?? "Unable to update follow.");
       }
     }, "follow");
   };
@@ -588,8 +654,10 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
       try {
         await addComment(commentBody);
         setCommentBody("");
+        emitToast("success", "Comment posted");
       } catch (err: any) {
         setCommentError(err?.message ?? "Failed to add comment.");
+        emitToast("error", err?.message ?? "Failed to add comment.");
       } finally {
         setCommentSubmitting(false);
       }
@@ -640,12 +708,11 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   }, [user?.email]);
 
   const resolveCommentName = (userId: string) => {
-    const profile = commentProfiles?.[userId];
-    const name =
-      safeText(profile?.full_name) || safeText(profile?.display_name) || safeText(profile?.username);
+    const comment = comments.find((c) => c.user_id === userId);
+    const name = safeText((comment as any)?.public_profiles?.display_name);
     if (name) return name;
     if (user?.id && userId === user.id && viewerEmailPrefix) return viewerEmailPrefix;
-    return `User ${String(userId).slice(0, 6)}`;
+    return "Buyer";
   };
 
   return (
@@ -718,7 +785,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
             <div className="min-w-0 lg:overflow-y-auto lg:max-h-[calc(90vh-6rem)] lg:pr-2">
               <div className="flex flex-wrap gap-2 mb-3">
                 <span className="px-2.5 py-1 bg-slate-100 text-slate-600 text-xs font-bold uppercase rounded tracking-wider border border-slate-200">
-                  {condition}
+                  {conditionLabel || "New"}
                 </span>
 
                 {categoryName ? (
@@ -743,6 +810,11 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
               <h2 className="text-2xl md:text-3xl font-semibold text-slate-900 leading-tight">
                 {title || "Untitled Product"}
               </h2>
+              {isSold ? (
+                <div className="mt-2 inline-flex items-center px-2.5 py-1 rounded-lg bg-rose-100 text-rose-700 text-xs font-black">
+                  SOLD
+                </div>
+              ) : null}
 
               <div className="flex items-end gap-3 mt-3 mb-4">
                 <span className="text-3xl font-black text-brand">{formatMoneyNGN(price)}</span>
@@ -782,7 +854,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                 <div className="grid grid-cols-2 gap-3 text-sm text-slate-600">
                   <div className="bg-white border border-slate-200 rounded-lg p-3">
                     <div className="text-xs text-slate-400 font-semibold uppercase">Condition</div>
-                    <div className="font-bold text-slate-800">{condition || "N/A"}</div>
+                    <div className="font-bold text-slate-800">{conditionLabel || "N/A"}</div>
                   </div>
                   <div className="bg-white border border-slate-200 rounded-lg p-3">
                     <div className="text-xs text-slate-400 font-semibold uppercase">Category</div>
@@ -904,12 +976,12 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                     className={`rounded-full border p-2 transition ${
                       liked ? "border-rose-200 bg-rose-50 text-rose-600" : "border-slate-200 text-slate-500"
                     }`}
-                    title={liked ? "Unlike" : "Like"}
+                    title={liked ? "Unsave" : "Save"}
                   >
                     <Heart className={`w-4 h-4 ${liked ? "fill-rose-500 text-rose-500" : ""}`} />
                   </button>
                 </div>
-                <div className="text-xs text-slate-500 mt-2">{likeCount} likes</div>
+                <div className="text-xs text-slate-500 mt-2">{likeCount} saved</div>
 
                 <div
                   className={`mt-4 rounded-xl p-4 border ${
@@ -921,7 +993,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className={`text-xs font-bold uppercase tracking-wider ${isSellerPremium ? "text-slate-300" : "text-slate-500"}`}>
-                        Seller
+                        Seller{businessName && businessName !== "Seller" ? ":" : ""}
                       </p>
                       <div className={`mt-1 font-black text-lg flex items-center gap-2 ${isSellerPremium ? "text-white" : "text-slate-900"}`}>
                         <span className="truncate">{businessName}</span>
@@ -933,7 +1005,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                         ) : null}
                       </div>
                       <div className={`text-xs mt-1 flex items-center gap-2 ${isSellerPremium ? "text-slate-300" : "text-slate-500"}`}>
-                        <span>{sellerBadgeLabel}</span>
+                        <span className={`${verificationTone} font-bold`}>{sellerBadgeLabel}</span>
                         <span className="w-1 h-1 rounded-full bg-slate-400"></span>
                         <div className="flex items-center gap-1">
                           <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
@@ -955,8 +1027,12 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
                   <button
                     type="button"
-                    onClick={handleToggleFollow}
-                    disabled={followMutating || !sellerUserId}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleToggleFollow();
+                    }}
+                    disabled={followMutating || !businessId}
                     className={`mt-4 w-full rounded-lg border px-3 py-2 text-sm font-bold flex items-center justify-center gap-2 transition ${
                       following
                         ? "border-emerald-200 bg-emerald-50 text-emerald-700"

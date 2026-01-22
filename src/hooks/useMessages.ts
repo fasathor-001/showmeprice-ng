@@ -5,13 +5,13 @@ import { useAuth } from "./useAuth";
 
 export type ChatMessage = {
   id: string;
+  conversation_id?: string | null;
   sender_id: string;
   receiver_id: string;
   content: string;
   created_at: string;
   read_at: string | null;
   product_id: string | null;
-  conversation_id?: string | null;
   product?: { id: string; title: string | null; price: number | string | null; images?: string[] | null } | null;
   sender?: { id: string; display_name: string | null; full_name: string | null; username: string | null } | null;
   receiver?: { id: string; display_name: string | null; full_name: string | null; username: string | null } | null;
@@ -19,6 +19,7 @@ export type ChatMessage = {
 
 export type Conversation = {
   key: string;
+  conversationId: string | null;
   partnerId: string;
   partnerName: string;
   productId: string | null;
@@ -63,23 +64,80 @@ export function useMessages(opts?: { enabled?: boolean }) {
   const enabled = opts?.enabled ?? true;
 
   const [loading, setLoading] = useState(false);
-  const [loadingChat, setLoadingChat] = useState(false);
+  const [loadingThreadId, setLoadingThreadId] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeKey, setActiveKey] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [messagesByConversationId, setMessagesByConversationId] = useState<
+    Record<string, ChatMessage[]>
+  >({});
 
   const active = useMemo(() => {
-    if (!activeKey) return null;
-    return conversations.find((c) => c.key === activeKey) ?? null;
-  }, [activeKey, conversations]);
+    if (!activeConversationId) return null;
+    return conversations.find((c) => c.conversationId === activeConversationId) ?? null;
+  }, [activeConversationId, conversations]);
+
+  const updateConversationMeta = useCallback(
+    (params: {
+      conversationId?: string | null;
+      partnerId?: string;
+      productId?: string | null;
+      lastMessage?: string;
+      lastAt?: string;
+      unreadDelta?: number;
+      unreadCount?: number;
+      forceUnreadZero?: boolean;
+    }) => {
+      const convId = params.conversationId ? String(params.conversationId) : "";
+      if (!convId) return;
+
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => String(c.conversationId || "") === convId);
+        if (idx >= 0) {
+          const current = prev[idx];
+          let unread = current.unreadCount;
+          if (params.forceUnreadZero) unread = 0;
+          else if (typeof params.unreadCount === "number") unread = params.unreadCount;
+          else if (typeof params.unreadDelta === "number") unread = Math.max(0, unread + params.unreadDelta);
+
+          const updated = {
+            ...current,
+            lastMessage: params.lastMessage ?? current.lastMessage,
+            lastAt: params.lastAt ?? current.lastAt,
+            unreadCount: unread,
+          };
+          const next = [...prev];
+          next[idx] = updated;
+          return next;
+        }
+
+        const partnerId = params.partnerId || "";
+        const newConv: Conversation = {
+          key: `conv:${convId}`,
+          conversationId: convId,
+          partnerId,
+          partnerName: "",
+          productId: params.productId ?? null,
+          productTitle: null,
+          productPrice: null,
+          productImages: null,
+          lastMessage: params.lastMessage ?? "",
+          lastAt: params.lastAt ?? new Date().toISOString(),
+          unreadCount: params.forceUnreadZero ? 0 : Math.max(0, params.unreadDelta ?? 0),
+        };
+        return [newConv, ...prev];
+      });
+    },
+    []
+  );
 
   const refreshConversations = useCallback(async () => {
     if (!user || !enabled) {
       setConversations([]);
-      setActiveKey(null);
-      setMessages([]);
+      setActiveConversationId(null);
+      setMessagesByConversationId({});
       return;
     }
 
@@ -90,7 +148,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
       const { data, error: e } = await supabase
         .from("messages")
         .select(
-          "id,sender_id,receiver_id,content:body,created_at,read_at,product_id,product:products!messages_product_id_fkey(id,title,price,images),sender:profiles!messages_sender_id_fkey(id,display_name,full_name,username),receiver:profiles!messages_receiver_id_fkey(id,display_name,full_name,username)"
+          "id,conversation_id,sender_id,receiver_id,content:body,created_at,read_at,product_id,product:products!messages_product_id_fkey(id,title,price,images),sender:profiles!messages_sender_id_fkey(id,display_name,full_name,username),receiver:profiles!messages_receiver_id_fkey(id,display_name,full_name,username)"
         )
         .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
         .order("created_at", { ascending: false })
@@ -115,6 +173,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
         if (!map.has(key)) {
           map.set(key, {
             key,
+            conversationId: convId || null,
             partnerId,
             productId: m.product_id ?? null,
             productTitle: (m as any)?.product?.title ?? null,
@@ -182,40 +241,34 @@ export function useMessages(opts?: { enabled?: boolean }) {
       setConversations(convs);
 
       // keep activeKey if still exists
-      if (activeKey && !convs.some((c) => c.key === activeKey)) {
-        setActiveKey(null);
-        setMessages([]);
+      if (activeConversationId && !convs.some((c) => c.conversationId === activeConversationId)) {
+        setActiveConversationId(null);
       }
     } catch (err: any) {
       setError(err?.message ?? "Failed to load messages");
     } finally {
       setLoading(false);
     }
-  }, [user?.id, enabled, activeKey]);
+  }, [user?.id, enabled, activeConversationId]);
 
-  const loadChat = useCallback(
-    async (partnerId: string, productId: string | null) => {
+  const loadThread = useCallback(
+    async (conversationId: string) => {
       if (!user) return;
+      if (!conversationId) return;
 
-      const key = convKey(partnerId, productId);
-      setActiveKey(key);
-      setLoadingChat(true);
+      setLoadingThreadId(conversationId);
       setError(null);
 
       try {
         let q = supabase
           .from("messages")
           .select(
-            "id,sender_id,receiver_id,content:body,created_at,read_at,product_id,product:products!messages_product_id_fkey(id,title,price,images),sender:profiles!messages_sender_id_fkey(id,display_name,full_name,username),receiver:profiles!messages_receiver_id_fkey(id,display_name,full_name,username)"
-          )
-          .or(
-            `and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`
+            "id,conversation_id,sender_id,receiver_id,content:body,created_at,read_at,product_id,product:products!messages_product_id_fkey(id,title,price,images),sender:profiles!messages_sender_id_fkey(id,display_name,full_name,username),receiver:profiles!messages_receiver_id_fkey(id,display_name,full_name,username)"
           )
           .order("created_at", { ascending: true })
           .limit(500);
 
-        if (productId) q = q.eq("product_id", productId);
-        else q = q.is("product_id", null);
+        q = q.eq("conversation_id", conversationId);
 
         const { data, error: e } = await q;
         if (e) throw e;
@@ -224,59 +277,75 @@ export function useMessages(opts?: { enabled?: boolean }) {
           ...m,
           content: normalizeContent(m?.content),
         })) as ChatMessage[];
-        setMessages(rows);
+        setMessagesByConversationId((prev) => ({ ...prev, [conversationId]: rows }));
 
         // Mark read (only messages sent to me by partner in this conversation)
-        const hasUnread = rows.some(
-          (m) => m.receiver_id === user.id && m.sender_id === partnerId && !m.read_at
-        );
+        const hasUnread = rows.some((m) => m.receiver_id === user.id && !m.read_at);
 
         if (hasUnread) {
           let uq = supabase
             .from("messages")
             .update({ read_at: new Date().toISOString() })
             .eq("receiver_id", user.id)
-            .eq("sender_id", partnerId)
             .is("read_at", null);
-
-          uq = productId ? uq.eq("product_id", productId) : uq.is("product_id", null);
+          uq = uq.eq("conversation_id", conversationId);
           await uq;
-
-          // Refresh conv list counts
-          refreshConversations();
+          updateConversationMeta({ conversationId, forceUnreadZero: true });
         }
       } catch (err: any) {
         setError(err?.message ?? "Failed to load chat");
       } finally {
-        setLoadingChat(false);
+        setLoadingThreadId(null);
       }
     },
-    [user?.id, refreshConversations]
+    [user?.id, updateConversationMeta]
   );
 
   const sendMessage = useCallback(
-    async (partnerId: string, productId: string | null, content: string) => {
+    async (args: { conversationId: string; otherUserId: string; productId?: string | null; body: string }) => {
       if (!user) throw new Error("Not signed in");
-      const text = String(content ?? "").trim();
+      const text = String(args.body ?? "").trim();
       if (!text) return;
+      if (!args.conversationId) throw new Error("Missing conversation.");
 
       const payload = {
         sender_id: user.id,
-        receiver_id: partnerId,
+        receiver_id: args.otherUserId,
         body: text,
-        product_id: productId,
+        product_id: args.productId ?? null,
+        conversation_id: args.conversationId,
       };
 
-      const { data, error: e } = await supabase.from("messages").insert(payload).select().limit(1);
-      if (e) throw e;
+      setSending(true);
+      try {
+        const { data, error: e } = await supabase.from("messages").insert(payload).select("*").single();
+        if (e) throw e;
 
-      const inserted = (data?.[0] ?? null) as ChatMessage | null;
-      if (inserted) {
-        setMessages((prev) => [...prev, inserted]);
-        refreshConversations();
+        const inserted = (data ?? null) as ChatMessage | null;
+        if (inserted) {
+          const normalized = {
+            ...inserted,
+            content: normalizeContent((inserted as any)?.content ?? (inserted as any)?.body),
+          } as ChatMessage;
+          const convId = String(args.conversationId);
+          setMessagesByConversationId((prev) => {
+            const list = prev[convId] ?? [];
+            if (list.some((m) => m.id === normalized.id)) return prev;
+            return { ...prev, [convId]: [...list, normalized] };
+          });
+          updateConversationMeta({
+            conversationId: args.conversationId,
+            lastMessage: normalized.content,
+            lastAt: normalized.created_at,
+            forceUnreadZero: true,
+          });
+          await loadThread(args.conversationId);
+        }
+      } finally {
+        setSending(false);
       }
     },
-    [user?.id, refreshConversations]
+    [user?.id, loadThread, updateConversationMeta]
   );
 
   // Initial + realtime updates
@@ -298,21 +367,29 @@ export function useMessages(opts?: { enabled?: boolean }) {
           if (!m) return;
           if (m.sender_id !== user.id && m.receiver_id !== user.id) return;
 
-          refreshConversations();
-
           // If active chat matches, append + mark read (if needed)
-          if (activeKey) {
-            const partnerId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
-            const key = convKey(partnerId, m.product_id ?? null);
-            if (key === activeKey) {
-              setMessages((prev) => [...prev, m]);
+          const convId = m.conversation_id ? String(m.conversation_id) : "";
+          if (convId) {
+            setMessagesByConversationId((prev) => {
+              const list = prev[convId] ?? [];
+              if (list.some((msg) => msg.id === m.id)) return prev;
+              return { ...prev, [convId]: [...list, m] };
+            });
+            updateConversationMeta({
+              conversationId: convId,
+              partnerId: m.sender_id === user.id ? m.receiver_id : m.sender_id,
+              productId: m.product_id ?? null,
+              lastMessage: normalizeContent(m.content),
+              lastAt: m.created_at,
+              unreadDelta:
+                m.receiver_id === user.id && (!activeConversationId || convId !== activeConversationId) ? 1 : 0,
+              forceUnreadZero: convId === activeConversationId,
+            });
+          }
 
-              if (m.receiver_id === user.id && !m.read_at) {
-                supabase
-                  .from("messages")
-                  .update({ read_at: new Date().toISOString() })
-                  .eq("id", m.id);
-              }
+          if (activeConversationId && convId === activeConversationId) {
+            if (m.receiver_id === user.id && !m.read_at) {
+              supabase.from("messages").update({ read_at: new Date().toISOString() }).eq("id", m.id);
             }
           }
         }
@@ -322,20 +399,21 @@ export function useMessages(opts?: { enabled?: boolean }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, enabled, refreshConversations, activeKey]);
+  }, [user?.id, enabled, activeConversationId, updateConversationMeta]);
 
   return {
     loading,
-    loadingChat,
+    loadingThreadId,
+    sending,
     error,
     conversations,
     active,
-    activeKey,
-    messages,
+    activeConversationId,
+    messagesByConversationId,
     refreshConversations,
-    loadChat,
+    loadThread,
     sendMessage,
-    setActiveKey,
+    setActiveConversationId,
   };
 }
 

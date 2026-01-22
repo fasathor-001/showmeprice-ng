@@ -1,8 +1,6 @@
-import React from "react";
+import * as React from "react";
 
-type Props = {
-  children: React.ReactNode;
-};
+type Props = React.PropsWithChildren<{}>;
 
 type State = {
   hasError: boolean;
@@ -10,6 +8,7 @@ type State = {
 };
 
 export default class ErrorBoundary extends React.Component<Props, State> {
+  declare props: Props;
   state: State = { hasError: false, message: "" };
 
   static getDerivedStateFromError(error: Error) {

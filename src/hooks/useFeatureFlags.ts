@@ -59,7 +59,7 @@ export function useFeatureFlags() {
         INFLIGHT = (async () => {
           const { data, error: qErr } = await supabase
             .from("feature_flags")
-            .select("key, enabled, description, visible_to, created_at, updated_at")
+            .select("key, enabled, description, visible_to, updated_at")
             .order("key", { ascending: true });
 
           if (qErr) throw qErr;

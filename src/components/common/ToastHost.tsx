@@ -2,10 +2,11 @@ import React, { useEffect, useRef, useState } from "react";
 
 type ToastType = "success" | "error" | "info";
 type Toast = { id: string; message: string; type: ToastType };
+type TimerId = ReturnType<typeof window.setTimeout>;
 
 export default function ToastHost() {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const timersRef = useRef<Record<string, ReturnType<typeof window.setTimeout>>>({});
+  const timersRef = useRef<Record<string, TimerId>>({});
 
   useEffect(() => {
     const onToast = (event: Event) => {
@@ -25,7 +26,7 @@ export default function ToastHost() {
     window.addEventListener("smp:toast", onToast as EventListener);
     return () => {
       window.removeEventListener("smp:toast", onToast as EventListener);
-      Object.values(timersRef.current).forEach((t) => window.clearTimeout(t));
+      (Object.values(timersRef.current) as TimerId[]).forEach((t) => window.clearTimeout(t));
       timersRef.current = {};
     };
   }, []);

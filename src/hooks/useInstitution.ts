@@ -3,6 +3,13 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 import { Institution, ProcurementLog } from '../types';
 
+function isMissingTableError(err: any) {
+  const code = String(err?.code ?? '');
+  const status = Number(err?.status ?? 0);
+  const message = String(err?.message ?? '');
+  return code === 'PGRST205' || status === 404 || message.includes('PGRST205');
+}
+
 export function useInstitution() {
   const { user } = useAuth();
   const [institution, setInstitution] = useState<Institution | null>(null);
@@ -26,11 +33,23 @@ export function useInstitution() {
           .limit(1);
 
         if (error) {
-          console.error("Error fetching institution:", error);
+          if (isMissingTableError(error)) {
+            setInstitution(null);
+            setLogs([]);
+            return;
+          }
+          setError(error.message);
           return;
         }
 
-        const inst = (data && data.length > 0) ? (data[0] as Institution) : null;
+        const raw = (data && data.length > 0) ? (data[0] as any) : null;
+        const inst = raw
+          ? ({
+              ...raw,
+              org_name: raw.org_name ?? raw.institution_name,
+              org_type: raw.org_type ?? raw.institution_type,
+            } as Institution)
+          : null;
 
         if (inst) {
           setInstitution(inst);
@@ -39,7 +58,9 @@ export function useInstitution() {
           setInstitution(null);
         }
       } catch (err: any) {
-        console.error(err);
+        if (!isMissingTableError(err)) {
+          setError(err?.message ?? 'Failed to load institution.');
+        }
       } finally {
         setLoading(false);
       }
@@ -70,16 +91,22 @@ export function useInstitution() {
         .from('institutions')
         .insert({
           user_id: user.id,
-          org_name: name,
-          org_type: type,
-          address: address
+          institution_name: name,
+          institution_type: type
         })
         .select()
         .limit(1);
 
       if (error) throw error;
 
-      const created = (data && data.length > 0) ? (data[0] as Institution) : null;
+      const createdRaw = (data && data.length > 0) ? (data[0] as any) : null;
+      const created = createdRaw
+        ? ({
+            ...createdRaw,
+            org_name: createdRaw.org_name ?? createdRaw.institution_name,
+            org_type: createdRaw.org_type ?? createdRaw.institution_type,
+          } as Institution)
+        : null;
       setInstitution(created);
       return true;
     } catch (err: any) {

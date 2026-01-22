@@ -262,6 +262,7 @@ export default function AccountShell({
       { key: "sellerSetup", label: "Seller Setup", to: "/seller/setup", icon: User2, show: !!user && isSeller },
       { key: "verification", label: "Verification", to: "/account/verification", icon: ShieldAlert, show: !!user && isSeller },
       { key: "escrowSeller", label: "Escrow Orders", to: "/account/seller/escrow", icon: FileText, show: !!user && isSeller },
+      { key: "engagement", label: "Engagement", to: "/seller/engagement", icon: BarChart3, show: !!user && isSeller },
       { key: "analytics", label: "Analytics", to: "/analytics", icon: BarChart3, show: !!user && isSeller },
       { key: "reports", label: "Reports", to: "/reports", icon: FileText, show: !!user && isSeller },
     ];

@@ -18,6 +18,7 @@ import HelpPage from "./pages/HelpPage";
 import DashboardPage from "./pages/DashboardPage";
 import BuyerDashboardPage from "./pages/BuyerDashboardPage";
 import MyShopPage from "./pages/MyShopPage";
+import SellerEngagementPage from "./pages/SellerEngagementPage";
 import InboxPage from "./pages/InboxPage";
 import SavedPage from "./pages/SavedPage";
 import NotificationsPage from "./pages/NotificationsPage";
@@ -94,7 +95,6 @@ export default function App() {
     else if (path === "/profile/") target = "/profile";
     else if (path === "/settings/") target = "/settings";
     else if (path === "/seller/setup/") target = "/seller/setup";
-    else if (path === "/dashboard" && isSellerAccount) target = "/my-shop";
 
     if (target) {
       smpNavigate(target, { replace: true });
@@ -282,7 +282,13 @@ export default function App() {
 
 
     if (path === "/dashboard") {
-      if (isSellerAccount) return null;
+      if (isSellerAccount) {
+        return (
+          <AccountShell title="Dashboard">
+            <DashboardPage />
+          </AccountShell>
+        );
+      }
       return (
         <AccountShell title="Dashboard">
           {/* If you have role-based dashboards already, keep using your existing logic.
@@ -346,6 +352,14 @@ export default function App() {
       return (
         <AccountShell title="Seller Profile">
           {sellerNeedsSetup ? <SellerProfileSetupPage /> : <ProfilePage />}
+        </AccountShell>
+      );
+    }
+
+    if (path === "/seller/engagement") {
+      return (
+        <AccountShell title="Engagement">
+          <SellerEngagementPage />
         </AccountShell>
       );
     }

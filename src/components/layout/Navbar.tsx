@@ -383,11 +383,19 @@ export default function Navbar() {
       ? "Verified"
       : verificationRaw === "pending"
       ? "Pending verification"
+      : verificationRaw === "in review"
+      ? "In review"
       : verificationRaw === "rejected"
       ? "Rejected"
       : verificationRaw
       ? "Unverified"
       : "";
+  const verificationTone =
+    verificationRaw === "verified" || verificationRaw === "approved"
+      ? "text-emerald-600"
+      : verificationRaw === "pending" || verificationRaw === "in review"
+      ? "text-amber-600"
+      : "text-red-600";
   const emailFallback = String(authUser?.email ?? "").trim();
   const avatarLetter = (displayName || emailFallback || "U").slice(0, 1).toUpperCase();
 
@@ -524,14 +532,16 @@ export default function Navbar() {
                     </div>
                     <div className="text-left">
                       <div className="text-sm font-extrabold text-slate-900">{displayName || "Account"}</div>
-                      <div className="text-[11px] text-slate-500 -mt-0.5">
-                        {accountStatus.ready ? accountLabel : "Loading..."}
+                      <div className="mt-0.5 flex items-center gap-2">
+                        {isSeller && verificationLabel ? (
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px]">
+                            <span className={`${verificationTone} font-bold`}>{verificationLabel}</span>
+                          </span>
+                        ) : null}
+                        <span className="text-[11px] text-slate-500 font-bold">
+                          {accountStatus.ready ? accountLabel : "Loading..."}
+                        </span>
                       </div>
-                      {isSeller && verificationLabel ? (
-                        <div className="mt-1 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700">
-                          {verificationLabel}
-                        </div>
-                      ) : null}
                     </div>
                   </button>
 
