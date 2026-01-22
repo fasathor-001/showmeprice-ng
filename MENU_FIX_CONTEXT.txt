@@ -1,0 +1,1729 @@
+
+
+===== src\App.tsx =====
+
+import React, { useEffect, useMemo, useState } from "react";
+import Layout from "./components/layout/Layout";
+import AccountShell from "./components/layout/AccountShell";
+
+import HomePage from "./pages/HomePage";
+import MarketplacePage from "./pages/MarketplacePage";
+import DealsPage from "./pages/DealsPage";
+import DeliveryPage from "./pages/DeliveryPage";
+
+import DashboardPage from "./pages/DashboardPage";
+import InboxPage from "./pages/InboxPage";
+import SavedPage from "./pages/SavedPage";
+import NotificationsPage from "./pages/NotificationsPage";
+import SettingsPage from "./pages/SettingsPage";
+import SellerProfileSetupPage from "./pages/SellerProfileSetupPage";
+import ProfilePage from "./pages/ProfilePage";
+import MyShopPage from "./pages/MyShopPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
+import ReportsPage from "./pages/ReportsPage";
+import HelpPage from "./pages/HelpPage";
+import AdminDashboard from "./pages/AdminDashboard";
+
+import { useAuth } from "./hooks/useAuth";
+import { supabase } from "./lib/supabase";
+
+type InboxInit = {
+  partnerId: string;
+  productId: string;
+  partnerName?: string;
+  message?: string;
+  returnTo?: string;
+};
+
+function nav(to: string) {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === to) return;
+  window.history.pushState({}, "", to);
+  window.dispatchEvent(new Event("smp:navigate"));
+}
+
+function safeStr(v: any) {
+  return String(v ?? "").trim();
+}
+
+function sellerSetupKey(userId: string) {
+  return `smp:seller_setup_complete:${userId}`;
+}
+
+function markSellerSetup(userId: string, done: boolean) {
+  try {
+    const k = sellerSetupKey(userId);
+    if (done) localStorage.setItem(k, "1");
+    else localStorage.removeItem(k);
+  } catch {}
+}
+
+function wasSellerSetupDone(userId: string) {
+  try {
+    return localStorage.getItem(sellerSetupKey(userId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function isBusinessComplete(biz: any) {
+  const b = biz || {};
+  const whatsapp = safeStr(b.whatsapp_number ?? b.whatsapp);
+  const stateOk = b.state_id !== null && b.state_id !== undefined && String(b.state_id).trim() !== "";
+  return (
+    safeStr(b.business_name).length > 0 &&
+    safeStr(b.business_type).length > 0 &&
+    safeStr(b.city).length > 0 &&
+    safeStr(b.address).length > 0 &&
+    whatsapp.length > 0 &&
+    stateOk
+  );
+}
+
+export default function App() {
+  const { user } = useAuth();
+
+  const [path, setPath] = useState<string>(() =>
+    typeof window !== "undefined" ? window.location.pathname : "/"
+  );
+
+  const [inboxInit, setInboxInit] = useState<InboxInit | null>(null);
+  const [sellerNeedsSetup, setSellerNeedsSetup] = useState<boolean>(false);
+
+  // âœ… Router listeners (THIS FIXES "Overview not working")
+  useEffect(() => {
+    const onViewInbox = (e: Event) => {
+      const ce = e as CustomEvent<any>;
+      const payload = ce?.detail ?? null;
+
+      if (payload?.partnerId) {
+        // Normalize + keep in memory (for immediate render) and sessionStorage (for reload recovery)
+        const clean: InboxInit = {
+          partnerId: String(payload.partnerId),
+          productId: payload.productId ? String(payload.productId) : "",
+          partnerName: payload.partnerName ? String(payload.partnerName) : undefined,
+          message: payload.message ? String(payload.message) : undefined,
+          returnTo: payload.returnTo ? String(payload.returnTo) : undefined,
+        };
+
+        try {
+          setInboxInit(clean);
+        } catch {
+          // ignore
+        }
+
+        try {
+          sessionStorage.setItem("smp:view-inbox", JSON.stringify(clean));
+        } catch {
+          // ignore
+        }
+      }
+
+      // Navigate using your existing nav() helper
+      nav("/inbox");
+    };
+
+    window.addEventListener("smp:view-inbox", onViewInbox as any);
+    return () => window.removeEventListener("smp:view-inbox", onViewInbox as any);
+  }, []);
+
+  // If the user refreshes on /inbox, recover the deep-link payload from sessionStorage
+  useEffect(() => {
+    if (path !== "/inbox") return;
+    if (inboxInit) return;
+    try {
+      const raw = sessionStorage.getItem("smp:view-inbox");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.partnerId) return;
+
+      const clean: InboxInit = {
+        partnerId: String(parsed.partnerId),
+        productId: parsed.productId ? String(parsed.productId) : "",
+        partnerName: parsed.partnerName ? String(parsed.partnerName) : undefined,
+        message: parsed.message ? String(parsed.message) : undefined,
+        returnTo: parsed.returnTo ? String(parsed.returnTo) : undefined,
+      };
+      setInboxInit(clean);
+    } catch {
+      // ignore
+    }
+  }, [path]);
+
+  const protectedPaths = useMemo(
+    () =>
+      new Set([
+        "/dashboard",
+        "/settings",
+        "/my-shop",
+        "/seller/setup",
+        "/inbox",
+        "/saved",
+        "/notifications",
+        "/help",
+        "/analytics",
+        "/reports",
+        "/admin",
+      ]),
+    []
+  );
+
+  // Seller setup enforcement (server-safe: we verify from DB, but never trap user on transient failures)
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      if (!user) {
+        if (alive) setSellerNeedsSetup(false);
+        return;
+      }
+
+      try {
+        // Read user_type (NO .single/.maybeSingle)
+        const { data: pRows, error: pErr } = await supabase
+          .from("profiles")
+          .select("user_type,role")
+          .eq("id", user.id)
+          .limit(1);
+
+        if (pErr) throw pErr;
+
+        const metaType = (user as any)?.user_metadata?.user_type;
+        const userType = String(pRows?.[0]?.user_type ?? metaType ?? "buyer").toLowerCase();
+
+        if (userType !== "seller") {
+          if (alive) setSellerNeedsSetup(false);
+          return;
+        }
+
+        // Business row
+        const { data: bizRows, error: bErr } = await supabase
+          .from("businesses")
+          .select("*")
+          .eq("user_id", user.id)
+          .limit(1);
+
+        if (bErr) throw bErr;
+
+        const biz = bizRows?.[0] ?? null;
+        const needs = !isBusinessComplete(biz);
+
+        if (!alive) return;
+
+        setSellerNeedsSetup(needs);
+
+        // Cache completion so a temporary schema/RLS issue won't trap seller
+        if (!needs) markSellerSetup(user.id, true);
+        else markSellerSetup(user.id, false);
+
+        // Only enforce redirect on key seller pages (not on /seller/setup itself)
+        const enforceSet = new Set<string>(["/dashboard", "/my-shop", "/analytics", "/reports"]);
+        if (needs && path !== "/seller/setup" && enforceSet.has(path)) {
+          nav("/seller/setup");
+        }
+      } catch {
+        // PRODUCTION FAIL-SAFE:
+        // If we have ever completed setup before, do not trap seller in /seller/setup.
+        if (!alive) return;
+        if (user?.id && wasSellerSetupDone(user.id)) setSellerNeedsSetup(false);
+        else setSellerNeedsSetup(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [user, path]);
+
+  // Basic auth routing: if user is not signed in, allow public pages; protected pages render HomePage
+  const isProtected = protectedPaths.has(path);
+
+  // ---- Route selection (order matters) ----
+  let page: React.ReactNode = <HomePage />;
+
+  if (path === "/") page = <HomePage />;
+
+  if (path === "/marketplace") page = <MarketplacePage />;
+
+  if (path === "/deals") page = <DealsPage />;
+  if (path === "/delivery") page = <DeliveryPage />;
+
+  if (isProtected && !user) {
+    // Keep URL; HomePage can show login modal
+    page = <HomePage />;
+    return <Layout>{page}</Layout>;
+  }
+
+  if (path === "/dashboard") {
+    page = (
+      <AccountShell title="Dashboard">
+        <DashboardPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/inbox") {
+    page = (
+      <AccountShell title="Messages">
+        <InboxPage
+          initialChat={
+            inboxInit
+              ? {
+                  partnerId: inboxInit.partnerId,
+                  productId: inboxInit.productId,
+                  partnerName: inboxInit.partnerName,
+                  message: inboxInit.message,
+                }
+              : undefined
+          }
+        />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/saved") {
+    page = (
+      <AccountShell title="Saved Items">
+        <SavedPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/notifications") {
+    page = (
+      <AccountShell title="Notifications">
+        <NotificationsPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/settings") {
+    page = (
+      <AccountShell title="Profile & Settings">
+        <SettingsPage />
+      </AccountShell>
+    );
+  }
+
+  // IMPORTANT: allow sellers to open /seller/setup anytime (do NOT redirect away after setup)
+  if (path === "/seller/setup") {
+    page = (
+      <AccountShell title={sellerNeedsSetup ? "Complete Seller Profile" : "Seller Profile"}>
+        <SellerProfileSetupPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/my-shop") {
+    page = (
+      <AccountShell title="Seller Dashboard">
+        <MyShopPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/analytics") {
+    page = (
+      <AccountShell title="Analytics">
+        <AnalyticsPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/reports") {
+    page = (
+      <AccountShell title="Reports">
+        <ReportsPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/profile") {
+    page = (
+      <AccountShell title="Profile">
+        <ProfilePage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/help") {
+    page = (
+      <AccountShell title="Help & Support">
+        <HelpPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/admin") {
+    page = (
+      <AccountShell title="Admin">
+        <AdminDashboard onNavigateHome={() => nav("/")} />
+      </AccountShell>
+    );
+  }
+
+  return <Layout>{page}</Layout>;
+}
+
+
+===== src\components\layout\Navbar.tsx =====
+
+// src/components/layout/Navbar.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import { useProfile } from "../../hooks/useProfile";
+import { useFF } from "../../hooks/useFF";
+import { useUnreadMessagesCount } from "../../hooks/useUnreadMessagesCount";
+import type { User } from "@supabase/supabase-js";
+
+type NavItem = {
+  label: string;
+  path: string;
+  show?: boolean;
+};
+
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+function navigateToPath(path: string) {
+  try {
+    if (window.location.pathname !== path) window.history.pushState({}, "", path);
+    window.dispatchEvent(new Event("popstate"));
+    window.dispatchEvent(new Event("smp:navigate"));
+  } catch {
+    window.location.href = path;
+  }
+}
+
+function useCurrentPath() {
+  const [path, setPath] = useState<string>(() => window.location.pathname || "/");
+  useEffect(() => {
+    const onChange = () => setPath(window.location.pathname || "/");
+    window.addEventListener("popstate", onChange);
+    window.addEventListener("smp:navigate", onChange as any);
+    return () => {
+      window.removeEventListener("popstate", onChange);
+      window.removeEventListener("smp:navigate", onChange as any);
+    };
+  }, []);
+  return path;
+}
+
+function Icon({
+  name,
+  className = "w-4 h-4",
+}: {
+  name:
+    | "menu"
+    | "x"
+    | "tag"
+    | "truck"
+    | "grid"
+    | "mail"
+    | "user"
+    | "shield"
+    | "dash"
+    | "settings"
+    | "store"
+    | "logout";
+  className?: string;
+}) {
+  const common = {
+    className,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  switch (name) {
+    case "menu":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 6h16" />
+          <path d="M4 12h16" />
+          <path d="M4 18h16" />
+        </svg>
+      );
+    case "x":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 6 6 18" />
+          <path d="M6 6l12 12" />
+        </svg>
+      );
+    case "grid":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 3h8v8H3z" />
+          <path d="M13 3h8v8h-8z" />
+          <path d="M3 13h8v8H3z" />
+          <path d="M13 13h8v8h-8z" />
+        </svg>
+      );
+    case "tag":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20.6 13.2 13.2 20.6a2 2 0 0 1-2.8 0L3 13.2V3h10.2l7.4 7.4a2 2 0 0 1 0 2.8z" />
+          <path d="M7.5 7.5h.01" />
+        </svg>
+      );
+    case "truck":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 17h4V5H2v12h2" />
+          <path d="M14 8h5l3 3v6h-2" />
+          <path d="M6 17a2 2 0 1 0 4 0" />
+          <path d="M16 17a2 2 0 1 0 4 0" />
+        </svg>
+      );
+    case "mail":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 4h16v16H4z" />
+          <path d="m4 7 8 6 8-6" />
+        </svg>
+      );
+    case "user":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 21a8 8 0 1 0-16 0" />
+          <path d="M12 13a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
+        </svg>
+      );
+    case "shield":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2 20 6v6c0 5-3.5 9.5-8 10-4.5-.5-8-5-8-10V6z" />
+        </svg>
+      );
+    case "dash":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 13h6V4H4z" />
+          <path d="M14 20h6V11h-6z" />
+          <path d="M14 4h6v5h-6z" />
+          <path d="M4 20h6v-5H4z" />
+        </svg>
+      );
+    case "settings":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
+          <path d="M19.4 15a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.5-2.4 1a7.7 7.7 0 0 0-1.7-1l-.4-2.6H11l-.4 2.6a7.7 7.7 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7.8 7.8 0 0 0 .1 2l-2 1.5 2 3.5 2.4-1a7.7 7.7 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5z" />
+        </svg>
+      );
+    case "store":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 7l1-4h16l1 4" />
+          <path d="M5 7v14h14V7" />
+          <path d="M9 21V12h6v9" />
+        </svg>
+      );
+    case "logout":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 17l1 4h8a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-8l-1 4" />
+          <path d="M15 12H3" />
+          <path d="M6 9l-3 3 3 3" />
+        </svg>
+      );
+  }
+}
+
+export function BrandLogo({ className = "w-9 h-9" }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        className,
+        "rounded-full bg-emerald-600 flex items-center justify-center font-black text-white select-none"
+      )}
+      aria-label="ShowMePrice.ng"
+      title="ShowMePrice.ng"
+    >
+      SMP
+    </div>
+  );
+}
+
+function openAuth(mode: "login" | "register") {
+  const openLogin = () => (window as any).openAuthModal?.();
+  const openRegister = () => (window as any).openRegisterModal?.();
+
+  if (mode === "login" && typeof openLogin === "function") return openLogin();
+  if (mode === "register" && typeof openRegister === "function") return openRegister();
+
+  try {
+    window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode } }));
+  } catch {}
+
+  if (window.location.pathname !== "/") navigateToPath("/");
+}
+
+export default function Navbar() {
+  const ff = useFF() as any;
+  const { profile } = useProfile() as any;
+  const path = useCurrentPath();
+
+  // âœ… Source of truth for signed-in state
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!alive) return;
+      setAuthUser(data.session?.user ?? null);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!alive) return;
+      setAuthUser(session?.user ?? null);
+    });
+
+    return () => {
+      alive = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  const signedIn = !!authUser;
+
+  const role = String((profile as any)?.role ?? "user").toLowerCase();
+  const userType = String((profile as any)?.user_type ?? "buyer").toLowerCase();
+
+  const isAdmin = signedIn && role === "admin";
+  const isSeller = signedIn && userType === "seller";
+
+  const deliveryEnabled = !!ff?.delivery;
+  const dealsEnabled = !!ff?.deals;
+  const inAppMessagingEnabled = !!ff?.messaging;
+
+  const unreadRaw = useUnreadMessagesCount(15000);
+  const unread = inAppMessagingEnabled ? Number(unreadRaw ?? 0) : 0;
+
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // âœ… NEW: Desktop account dropdown state
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    // close menus on route change
+    setMobileOpen(false);
+    setAccountOpen(false);
+  }, [path]);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+
+    const onMouseDown = (e: MouseEvent) => {
+      const el = accountMenuRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) setAccountOpen(false);
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAccountOpen(false);
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [accountOpen]);
+
+  const topItems: NavItem[] = useMemo(() => {
+    if (!signedIn) return [];
+    return [
+      { label: "Marketplace", path: "/categories", show: true },
+      { label: "Deals", path: "/deals", show: dealsEnabled },
+      { label: "Delivery", path: "/delivery", show: deliveryEnabled },
+    ].filter((x) => x.show);
+  }, [signedIn, dealsEnabled, deliveryEnabled]);
+
+  const go = (p: string) => () => navigateToPath(p);
+
+  const openInbox = () => {
+    setMobileOpen(false);
+    setAccountOpen(false);
+    navigateToPath("/inbox");
+    try {
+      window.dispatchEvent(new CustomEvent("smp:view-inbox", { detail: undefined }));
+    } catch {
+      window.dispatchEvent(new Event("smp:view-inbox"));
+    }
+  };
+
+  async function handleSignOut() {
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      setMobileOpen(false);
+      setAccountOpen(false);
+      navigateToPath("/");
+    }
+  }
+
+  const activeClass = (p: string) =>
+    cn(
+      "text-sm font-semibold px-3 py-2 rounded-lg",
+      path === p ? "text-brand bg-slate-50" : "text-slate-700 hover:text-brand hover:bg-slate-50"
+    );
+
+  const displayName = String(
+    (profile as any)?.full_name || (profile as any)?.display_name || "Account"
+  ).trim();
+  const emailFallback = String(authUser?.email ?? "").trim();
+  const avatarLetter = (displayName || emailFallback || "U").slice(0, 1).toUpperCase();
+
+  return (
+    <nav className="sticky top-0 z-50 bg-white/85 backdrop-blur border-b border-slate-100">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4">
+        <div className="h-14 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={go("/")}
+            className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-50"
+            aria-label="Go to Home"
+          >
+            <BrandLogo className="w-9 h-9" />
+            <span className="text-xl sm:text-2xl font-black text-slate-900 leading-none">
+              ShowMePrice<span className="text-brand">.ng</span>
+            </span>
+          </button>
+
+          {signedIn && (
+            <div className="hidden md:flex items-center gap-1">
+              {topItems.map((it) => (
+                <button key={it.path} type="button" onClick={go(it.path)} className={activeClass(it.path)}>
+                  {it.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            {!signedIn ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openAuth("login")}
+                  className="text-sm font-semibold px-3 py-2 rounded-lg text-slate-700 hover:text-brand hover:bg-slate-50"
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openAuth("register")}
+                  className="text-sm font-extrabold px-3 py-2 rounded-lg bg-brand text-white hover:opacity-95"
+                >
+                  Sell / Register
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Inbox icon */}
+                {inAppMessagingEnabled && (
+                  <button
+                    type="button"
+                    onClick={openInbox}
+                    className="relative inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-50 text-slate-800"
+                    aria-label="Inbox"
+                    title="Inbox"
+                  >
+                    <Icon name="mail" className="w-5 h-5" />
+                    {unread > 0 ? (
+                      <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    ) : null}
+                  </button>
+                )}
+
+                {/* âœ… Desktop Account Dropdown */}
+                <div ref={accountMenuRef} className="relative hidden md:block">
+                  <button
+                    type="button"
+                    onClick={() => setAccountOpen((v) => !v)}
+                    className="inline-flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-50"
+                    aria-label="Account menu"
+                    title="Account"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-extrabold">
+                      {avatarLetter}
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm font-extrabold text-slate-900">{displayName || "Account"}</div>
+                      <div className="text-[11px] text-slate-500 -mt-0.5">
+                        {isAdmin ? "Admin" : isSeller ? "Seller" : "Buyer"}
+                      </div>
+                    </div>
+                  </button>
+
+                  {accountOpen && (
+                    <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-lg p-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountOpen(false);
+                          navigateToPath("/dashboard");
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                      >
+                        <Icon name="dash" />
+                        Dashboard
+                      </button>
+
+                      {isSeller && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAccountOpen(false);
+                            navigateToPath("/my-shop");
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          <Icon name="store" />
+                          My Shop
+                        </button>
+                      )}
+
+                      {inAppMessagingEnabled && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAccountOpen(false);
+                            openInbox();
+                          }}
+                          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Icon name="mail" />
+                            Messages
+                          </span>
+                          {unread > 0 ? (
+                            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black inline-flex items-center justify-center">
+                              {unread > 99 ? "99+" : unread}
+                            </span>
+                          ) : null}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountOpen(false);
+                          navigateToPath("/profile");
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                      >
+                        <Icon name="user" />
+                        Profile
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountOpen(false);
+                          navigateToPath("/settings");
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                      >
+                        <Icon name="settings" />
+                        Settings
+                      </button>
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAccountOpen(false);
+                            navigateToPath("/admin");
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          <Icon name="shield" />
+                          Admin
+                        </button>
+                      )}
+
+                      <div className="my-1 border-t border-slate-100" />
+
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50"
+                      >
+                        <Icon name="logout" />
+                        Sign Out
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile: keep simple account tap to dashboard */}
+                <button
+                  type="button"
+                  onClick={() => navigateToPath("/dashboard")}
+                  className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-50 text-slate-800"
+                  aria-label="Account"
+                  title="Account"
+                >
+                  <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-extrabold">
+                    {avatarLetter}
+                  </div>
+                </button>
+              </>
+            )}
+
+            {signedIn && (
+              <button
+                type="button"
+                onClick={() => setMobileOpen((v) => !v)}
+                className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-50 text-slate-800"
+                aria-label="Menu"
+              >
+                {mobileOpen ? <Icon name="x" className="w-5 h-5" /> : <Icon name="menu" className="w-5 h-5" />}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile menu (unchanged) */}
+        {signedIn && mobileOpen && (
+          <div className="md:hidden pb-3">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="p-2 grid gap-1">
+                <button
+                  type="button"
+                  onClick={() => navigateToPath("/dashboard")}
+                  className={cn(
+                    "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                    path === "/dashboard" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                  )}
+                >
+                  <span>Dashboard</span>
+                  <Icon name="dash" />
+                </button>
+
+                {topItems.map((it) => (
+                  <button
+                    key={it.path}
+                    type="button"
+                    onClick={() => navigateToPath(it.path)}
+                    className={cn(
+                      "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                      path === it.path ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                    )}
+                  >
+                    <span>{it.label}</span>
+                    {it.path === "/deals" && <Icon name="tag" />}
+                    {it.path === "/delivery" && <Icon name="truck" />}
+                    {it.path === "/categories" && <Icon name="grid" />}
+                  </button>
+                ))}
+
+                {inAppMessagingEnabled && (
+                  <button
+                    type="button"
+                    onClick={openInbox}
+                    className={cn(
+                      "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                      path === "/inbox" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>Messages</span>
+                      {unread > 0 ? (
+                        <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                          {unread > 99 ? "99+" : unread}
+                        </span>
+                      ) : null}
+                    </div>
+                    <Icon name="mail" />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => navigateToPath("/profile")}
+                  className={cn(
+                    "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                    path === "/profile" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                  )}
+                >
+                  <span>Profile</span>
+                  <Icon name="user" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigateToPath("/settings")}
+                  className={cn(
+                    "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                    path === "/settings" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                  )}
+                >
+                  <span>Settings</span>
+                  <Icon name="settings" />
+                </button>
+
+                {isSeller && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToPath("/my-shop")}
+                    className={cn(
+                      "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                      path === "/my-shop" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                    )}
+                  >
+                    <span>My Shop</span>
+                    <Icon name="store" />
+                  </button>
+                )}
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToPath("/admin")}
+                    className={cn(
+                      "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                      path === "/admin" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                    )}
+                  >
+                    <span>Admin</span>
+                    <Icon name="shield" />
+                  </button>
+                )}
+
+                <div className="border-t border-slate-100" />
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 rounded-xl"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </nav>
+  );
+}
+
+
+===== src\components\layout\AccountShell.tsx =====
+
+// src/components/layout/AccountShell.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useAuth } from "../../hooks/useAuth";
+import { useProfile } from "../../hooks/useProfile";
+import { useFF } from "../../hooks/useFF";
+import { useUnreadMessagesCount } from "../../hooks/useUnreadMessagesCount";
+import {
+  LayoutDashboard,
+  Heart,
+  MessageSquare,
+  Bell,
+  HelpCircle,
+  LogOut,
+  ChevronRight,
+  Store,
+  Tag,
+  Truck,
+  BarChart3,
+  FileText,
+  User2,
+  Wrench,
+  Menu,
+  X,
+  ArrowLeft,
+} from "lucide-react";
+
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+function nav(to: string) {
+  try {
+    if (window.location.pathname !== to) window.history.pushState({}, "", to);
+    window.dispatchEvent(new Event("popstate"));
+    window.dispatchEvent(new Event("smp:navigate"));
+  } catch {
+    window.location.href = to;
+  }
+}
+
+function useCurrentPath() {
+  const [path, setPath] = useState<string>(() => window.location.pathname || "/");
+  useEffect(() => {
+    const onChange = () => setPath(window.location.pathname || "/");
+    window.addEventListener("popstate", onChange);
+    window.addEventListener("smp:navigate", onChange as any);
+    return () => {
+      window.removeEventListener("popstate", onChange);
+      window.removeEventListener("smp:navigate", onChange as any);
+    };
+  }, []);
+  return path;
+}
+
+type Item = {
+  key: string;
+  label: string;
+  to?: string;
+  onClick?: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  show?: boolean;
+  badge?: number;
+};
+
+export default function AccountShell({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  const { user } = useAuth();
+  const { profile } = useProfile() as any;
+  const FF = useFF() as any;
+
+  const path = useCurrentPath();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const role = String((profile as any)?.role ?? "user").toLowerCase();
+  const userType = String((profile as any)?.user_type ?? "buyer").toLowerCase();
+  const isAdmin = role === "admin";
+  const isSeller = userType === "seller";
+
+  // Feature flags (useFF already maps to canonical keys)
+  const messagingEnabled = !!FF?.messaging; // in_app_messaging_enabled
+  const dealsEnabled = !!FF?.deals;
+  const dealsPostingEnabled = !!FF?.dealsPosting;
+  const deliveryEnabled = !!FF?.delivery;
+
+  // âœ… Poll unread count; hide badge when messaging is disabled
+  const unreadRaw = useUnreadMessagesCount(15000);
+  const unread = messagingEnabled ? Number(unreadRaw ?? 0) : 0;
+
+  const logout = () => {
+    try {
+      (window as any).logout?.();
+    } catch {}
+    try {
+      window.dispatchEvent(new CustomEvent("smp:logout"));
+    } catch {}
+    // Fallback: open account menu from Navbar handles actual signout;
+    // In-app signout is typically handled there.
+    nav("/");
+  };
+
+  const sidebarItems: Item[] = useMemo(() => {
+    const common: Item[] = [
+      { key: "dashboard", label: "Overview", to: "/dashboard", icon: LayoutDashboard, show: !!user },
+      {
+        key: "messages",
+        label: "Messages",
+        to: "/inbox",
+        icon: MessageSquare,
+        show: !!user && messagingEnabled,
+        badge: unread,
+      },
+      { key: "saved", label: "Saved Items", to: "/saved", icon: Heart, show: !!user },
+      { key: "notifications", label: "Notifications", to: "/notifications", icon: Bell, show: !!user },
+      { key: "profile", label: "Profile", to: "/profile", icon: User2, show: !!user },
+      { key: "settings", label: "Settings", to: "/settings", icon: Wrench, show: !!user },
+      { key: "help", label: "Help & Support", to: "/help", icon: HelpCircle, show: true },
+    ];
+
+    const seller: Item[] = [
+      { key: "myshop", label: "My Shop", to: "/my-shop", icon: Store, show: !!user && isSeller },
+      { key: "analytics", label: "Analytics", to: "/analytics", icon: BarChart3, show: !!user && isSeller },
+      { key: "reports", label: "Reports", to: "/reports", icon: FileText, show: !!user && isSeller },
+      {
+        key: "sellerSetup",
+        label: "Seller Profile",
+        to: "/seller/setup",
+        icon: User2,
+        show: !!user && isSeller,
+      },
+    ];
+
+    const toggles: Item[] = [
+      { key: "deals", label: "Deals", to: "/deals", icon: Tag, show: !!user && dealsEnabled },
+      {
+        key: "season",
+        label: dealsPostingEnabled ? String((FF as any)?.deals_posting_enabled?.description || "Season") : "Season",
+        to: "/deals",
+        icon: Tag,
+        show: !!user && dealsEnabled && dealsPostingEnabled,
+      },
+      { key: "delivery", label: "Delivery", to: "/delivery", icon: Truck, show: !!user && deliveryEnabled },
+    ];
+
+    const admin: Item[] = [{ key: "admin", label: "Admin", to: "/admin", icon: Wrench, show: !!user && isAdmin }];
+
+    const actions: Item[] = [{ key: "logout", label: "Log out", onClick: logout, icon: LogOut, show: !!user }];
+
+    return [...common, ...seller, ...toggles, ...admin, ...actions].filter((x) => x.show !== false);
+  }, [
+    user,
+    isSeller,
+    isAdmin,
+    messagingEnabled,
+    unread,
+    dealsEnabled,
+    dealsPostingEnabled,
+    deliveryEnabled,
+    FF,
+  ]);
+
+  // âœ… Seller sidebar sections (seller account only)
+  const sellerSections = useMemo(() => {
+    if (!user || !isSeller) return [] as Array<{ key: string; label: string; items: Item[] }>;
+
+    const main: Item[] = [
+      { key: "dashboard", label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, show: !!user },
+      { key: "myListings", label: "My Listings", to: "/my-shop", icon: Store, show: !!user },
+      { key: "saved", label: "Saved Items", to: "/saved", icon: Heart, show: !!user },
+    ];
+
+    const communication: Item[] = [
+      {
+        key: "messages",
+        label: "Messages",
+        to: "/inbox",
+        icon: MessageSquare,
+        show: !!user && messagingEnabled,
+        badge: unread,
+      },
+      { key: "notifications", label: "Notifications", to: "/notifications", icon: Bell, show: !!user },
+    ];
+
+    const sellerTools: Item[] = [
+      { key: "sellerSetup", label: "Seller Setup", to: "/seller/setup", icon: User2, show: !!user && isSeller },
+      { key: "analytics", label: "Analytics", to: "/analytics", icon: BarChart3, show: !!user && isSeller },
+      { key: "reports", label: "Reports", to: "/reports", icon: FileText, show: !!user && isSeller },
+    ];
+
+    const system: Item[] = [
+      { key: "myProfile", label: "My Profile", to: "/profile", icon: User2, show: !!user },
+      { key: "settings", label: "Settings", to: "/settings", icon: Wrench, show: !!user },
+      { key: "help", label: "Help & Support", to: "/help", icon: HelpCircle, show: true },
+      ];
+
+    const logoutSection: Item[] = [{ key: "logout", label: "Log out", onClick: logout, icon: LogOut, show: !!user }];
+
+    const sections = [
+      { key: "main", label: "MAIN", items: main },
+      { key: "communication", label: "COMMUNICATION", items: communication },
+      { key: "sellerTools", label: "SELLER TOOLS", items: sellerTools },
+      { key: "system", label: "SYSTEM", items: system },
+      { key: "logout", label: "LOGOUT", items: logoutSection },
+    ]
+      .map((sec) => ({ ...sec, items: sec.items.filter((x) => x.show !== false) }))
+      .filter((sec) => sec.items.length > 0);
+
+    return sections;
+  }, [user, isSeller, messagingEnabled, unread, logout]);
+
+
+  const bottomTabs: Item[] = useMemo(() => {
+    return [
+      { key: "tab_dashboard", label: "Overview", to: "/dashboard", icon: LayoutDashboard, show: !!user },
+      {
+        key: "tab_messages",
+        label: "Messages",
+        to: "/inbox",
+        icon: MessageSquare,
+        show: !!user && messagingEnabled,
+        badge: unread,
+      },
+      { key: "tab_saved", label: "Saved", to: "/saved", icon: Heart, show: !!user },
+      { key: "tab_notifs", label: "Alerts", to: "/notifications", icon: Bell, show: !!user },
+      { key: "tab_profile", label: "Profile", to: "/profile", icon: User2, show: !!user },
+    ].filter((x) => x.show !== false);
+  }, [user, messagingEnabled, unread]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [path]);
+
+  const goBack = () => {
+    // If history is available, go back; else go dashboard
+    try {
+      if (window.history.length > 1) window.history.back();
+      else nav("/dashboard");
+    } catch {
+      nav("/dashboard");
+    }
+  };
+
+  return (
+    <div className="min-h-[calc(100vh-56px)] bg-slate-50">
+      {/* Mobile header */}
+      <div className="md:hidden sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100">
+        <div className="h-12 px-3 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={goBack}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-xl hover:bg-slate-50"
+            aria-label="Back"
+          >
+            <ArrowLeft className="w-5 h-5 text-slate-800" />
+          </button>
+
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-black text-slate-900 truncate">{title}</div>
+          </div>
+
+          <div className="flex items-center gap-1">
+            {messagingEnabled && (
+              <button
+                type="button"
+                onClick={() => nav("/inbox")}
+                className="relative inline-flex items-center justify-center w-10 h-10 rounded-xl hover:bg-slate-50"
+                aria-label="Messages"
+                title="Messages"
+              >
+                <MessageSquare className="w-5 h-5 text-slate-800" />
+                {unread > 0 ? (
+                  <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                    {unread}
+                  </span>
+                ) : null}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setMobileOpen((v) => !v)}
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl hover:bg-slate-50"
+              aria-label="Menu"
+            >
+              {mobileOpen ? <X className="w-5 h-5 text-slate-800" /> : <Menu className="w-5 h-5 text-slate-800" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile drawer */}
+        {mobileOpen && (
+          <div className="px-3 pb-3">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="p-2 grid gap-1">
+                                {isSeller ? (
+                  <div className="grid gap-3">
+                    {sellerSections.map((sec) => (
+                      <div key={sec.key}>
+                        <div className="px-3 pt-2 pb-1 text-[11px] font-black tracking-wide text-slate-500">
+                          {sec.label}
+                        </div>
+                        <div className="grid gap-1">
+                          {sec.items.map((it) => {
+                            const Icon = it.icon;
+                            const active = it.to ? path === it.to : false;
+                
+                            return (
+                              <button
+                                key={it.key}
+                                type="button"
+                                onClick={() => {
+                                                  setMobileOpen(false);
+                                                  if (it.onClick) return it.onClick();
+                                                  if (it.to) return nav(it.to);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                                  active ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                                )}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Icon className="w-4 h-4" />
+                                  <span>{it.label}</span>
+                                </div>
+                
+                                <div className="flex items-center gap-2">
+                                  {it.badge && it.badge > 0 ? (
+                                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                                      {it.badge}
+                                    </span>
+                                  ) : null}
+                                  <ChevronRight className="w-4 h-4 opacity-60" />
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  sidebarItems.map((it) => {
+                  const Icon = it.icon;
+                  const active = it.to ? path === it.to : false;
+
+                  return (
+                    <button
+                      key={it.key}
+                      type="button"
+                      onClick={() => {
+                        setMobileOpen(false);
+                        if (it.onClick) return it.onClick();
+                        if (it.to) return nav(it.to);
+                      }}
+                      className={cn(
+                        "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                        active ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        <span>{it.label}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {it.badge && it.badge > 0 ? (
+                          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                            {it.badge}
+                          </span>
+                        ) : null}
+                        <ChevronRight className="w-4 h-4 opacity-60" />
+                      </div>
+                    </button>
+                  );
+                })
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop layout */}
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4">
+        <div className="flex gap-4">
+          {/* Desktop sidebar */}
+          <aside className="hidden md:block w-72 shrink-0">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3 sticky top-20">
+              <div className="px-2 py-2">
+                <div className="text-xs font-black text-slate-500">ACCOUNT</div>
+                <div className="text-lg font-black text-slate-900">{title}</div>
+              </div>
+
+              <div className="mt-2 grid gap-1">
+                                {isSeller ? (
+                  <div className="grid gap-3">
+                    {sellerSections.map((sec) => (
+                      <div key={sec.key}>
+                        <div className="px-3 pt-2 pb-1 text-[11px] font-black tracking-wide text-slate-500">
+                          {sec.label}
+                        </div>
+                        <div className="grid gap-1">
+                          {sec.items.map((it) => {
+                            const Icon = it.icon;
+                            const active = it.to ? path === it.to : false;
+                
+                            return (
+                              <button
+                                key={it.key}
+                                type="button"
+                                onClick={() => {
+                                                  if (it.onClick) return it.onClick();
+                                                  if (it.to) return nav(it.to);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                                  active ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                                )}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Icon className="w-4 h-4" />
+                                  <span>{it.label}</span>
+                                </div>
+                
+                                <div className="flex items-center gap-2">
+                                  {it.badge && it.badge > 0 ? (
+                                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                                      {it.badge}
+                                    </span>
+                                  ) : null}
+                                  <ChevronRight className="w-4 h-4 opacity-60" />
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  sidebarItems.map((it) => {
+                  const Icon = it.icon;
+                  const active = it.to ? path === it.to : false;
+
+                  return (
+                    <button
+                      key={it.key}
+                      type="button"
+                      onClick={() => {
+                        if (it.onClick) return it.onClick();
+                        if (it.to) return nav(it.to);
+                      }}
+                      className={cn(
+                        "w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-between",
+                        active ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        <span>{it.label}</span>
+                      </div>
+
+                      {it.badge && it.badge > 0 ? (
+                        <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                          {it.badge}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })
+                )}
+              </div>
+            </div>
+          </aside>
+
+          {/* Content */}
+          <main className="flex-1 min-w-0 pb-24 md:pb-0">{children}</main>
+        </div>
+      </div>
+
+      {/* Mobile bottom tabs */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200">
+        <div className="max-w-6xl mx-auto px-2">
+          <div className="h-16 grid" style={{ gridTemplateColumns: `repeat(${bottomTabs.length}, minmax(0, 1fr))` }}>
+            {bottomTabs.map((it) => {
+              const Icon = it.icon;
+              const active = it.to ? path === it.to : false;
+
+              return (
+                <button
+                  key={it.key}
+                  type="button"
+                  onClick={() => it.to && nav(it.to)}
+                  className={cn(
+                    "relative flex flex-col items-center justify-center gap-1 rounded-xl my-2",
+                    active ? "text-brand" : "text-slate-700"
+                  )}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className="text-[10px] font-bold">{it.label}</span>
+
+                  {it.badge && it.badge > 0 ? (
+                    <span className="absolute top-1 right-3 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                      {it.badge}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+===== src\hooks\useProfile.ts =====
+
+// src/hooks/useProfile.ts
+import { useCallback, useEffect, useRef, useState } from "react";
+import { supabase } from "../lib/supabase";
+import type { Business } from "../types";
+
+export type ProfileRow = {
+  id: string;
+  full_name?: string | null;
+  display_name?: string | null;
+  username?: string | null;
+  user_type?: "buyer" | "seller" | string | null;
+  role?: string | null;
+  phone?: string | null;
+  city?: string | null;
+  state_id?: number | null;
+  business_name?: string | null;
+  business_type?: string | null;
+  membership_tier?: string | null;
+  language?: string | null;
+  notifications_enabled?: boolean | null;
+  chats_disabled?: boolean | null;
+  feedback_disabled?: boolean | null;
+  [key: string]: any;
+};
+
+type State = {
+  profile: ProfileRow | null;
+  business: Business | null;
+  loading: boolean;
+  error: string | null;
+};
+
+type Cache = {
+  userId: string;
+  profile: ProfileRow | null;
+  business: Business | null;
+  ts: number;
+};
+
+function getCache(): Cache | null {
+  try {
+    return (window as any).__SMP_PROFILE_CACHE__ ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setCache(c: Cache | null) {
+  try {
+    (window as any).__SMP_PROFILE_CACHE__ = c;
+  } catch {}
+}
+
+function getCachedUserType(userId: string): string {
+  try {
+    return String(localStorage.getItem(`smp:user_type:${userId}`) || "");
+  } catch {
+    return "";
+  }
+}
+
+function setCachedUserType(userId: string, t: string) {
+  try {
+    localStorage.setItem(`smp:user_type:${userId}`, t);
+  } catch {}
+}
+
+async function getAuthedUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data?.session?.user?.id ?? null;
+}
+
+export function useProfile() {
+  const requestIdRef = useRef(0);
+
+  const cached = getCache();
+  const [state, setState] = useState<State>(() => {
+    // Only show cached data briefly; refresh() will verify correct userId.
+    if (cached?.userId && (Date.now() - cached.ts) < 2 * 60 * 1000) {
+      return { profile: cached.profile, business: cached.business, loading: true, error: null };
+    }
+    return { profile: null, business: null, loading: true, error: null };
+  });
+
+  const refresh = useCallback(async () => {
+    const reqId = ++requestIdRef.current;
+    setState((s) => ({ ...s, loading: true, error: null }));
+
+    try {
+      const userId = await getAuthedUserId();
+
+      // Signed out
+      if (!userId) {
+        if (reqId !== requestIdRef.current) return;
+        setCache(null);
+        setState({ profile: null, business: null, loading: false, error: null });
+        return;
+      }
+
+      // If cache belongs to a different user, clear immediately to prevent buyer/seller mixup
+      const c = getCache();
+      if (c?.userId && c.userId !== userId) {
+        setCache(null);
+        if (reqId !== requestIdRef.current) return;
+        setState({ profile: null, business: null, loading: true, error: null });
+      }
+
+      // 1) Profile
+      const { data: profileRow, error: pErr } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (pErr) throw pErr;
+
+      // Persist user_type for refresh (prevents Navbar/AccountShell flicker)
+      const profileType = profileRow?.user_type ? String(profileRow.user_type).toLowerCase() : "";
+      if (profileType) setCachedUserType(userId, profileType);
+
+      // 2) Seller business record (safe even for buyers; will be null)
+      const { data: bizRow, error: bErr } = await supabase
+        .from("businesses")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (bErr) throw bErr;
+
+      if (reqId !== requestIdRef.current) return;
+
+      const mergedProfile = (profileRow as any) as ProfileRow | null;
+      const mergedBusiness = (bizRow as any) as Business | null;
+
+      setState({
+        profile: mergedProfile,
+        business: mergedBusiness,
+        loading: false,
+        error: null,
+      });
+
+      setCache({
+        userId,
+        profile: mergedProfile,
+        business: mergedBusiness,
+        ts: Date.now(),
+      });
+    } catch (e: any) {
+      if (reqId !== requestIdRef.current) return;
+      console.error("useProfile: fetch failed", e);
+      setState({
+        profile: null,
+        business: null,
+        loading: false,
+        error: e?.message ?? "Failed to load profile",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      // If auth user changes, refresh will clear stale cache as needed.
+      if (!session?.user?.id) setCache(null);
+      refresh();
+    });
+
+    return () => {
+      sub?.subscription?.unsubscribe();
+    };
+  }, [refresh]);
+
+  return {
+    profile: state.profile,
+    business: state.business,
+    loading: state.loading,
+    error: state.error,
+    refresh,
+  };
+}
+
+export default useProfile;

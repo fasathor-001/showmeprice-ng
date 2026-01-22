@@ -1,0 +1,51 @@
+-- Phase 12: Secure Contact Reveal
+BEGIN;
+
+-- Drop previous versions to ensure clean slate for this specific signature
+DROP FUNCTION IF EXISTS public.get_seller_contact(UUID);
+
+CREATE OR REPLACE FUNCTION public.get_seller_contact(p_seller_user_id UUID)
+RETURNS TABLE (phone TEXT, whatsapp TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_caller_id UUID := auth.uid();
+  v_caller_tier TEXT;
+BEGIN
+  -- 1. Check Authentication
+  IF v_caller_id IS NULL THEN
+    -- Return nulls if not logged in (or handle via frontend auth check)
+    RETURN QUERY SELECT NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  -- 2. Check Caller Membership Tier
+  SELECT membership_tier INTO v_caller_tier
+  FROM public.users
+  WHERE id = v_caller_id;
+
+  -- 3. Enforce Premium Gate
+  -- We allow 'pro', 'business', or legacy 'premium'
+  IF v_caller_tier IS NULL OR v_caller_tier NOT IN ('pro', 'business', 'premium') THEN
+     -- Not premium: return nulls
+     RETURN QUERY SELECT NULL::text, NULL::text;
+     RETURN;
+  END IF;
+
+  -- 4. Return Contact Data
+  -- Fetch phone from users table and whatsapp from businesses table
+  RETURN QUERY
+  SELECT
+    u.phone_number as phone,
+    b.whatsapp_number as whatsapp
+  FROM public.users u
+  LEFT JOIN public.businesses b ON b.user_id = u.id
+  WHERE u.id = p_seller_user_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.get_seller_contact(UUID) TO authenticated;
+
+COMMIT;

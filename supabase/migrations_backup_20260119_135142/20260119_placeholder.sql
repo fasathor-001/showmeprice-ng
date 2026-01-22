@@ -1,0 +1,2 @@
+-- placeholder migration to match remote schema_migrations history
+-- no-op;

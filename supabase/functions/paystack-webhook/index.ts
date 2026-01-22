@@ -1,0 +1,153 @@
+﻿import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+function jsonResponse(status: number, body: Record<string, unknown>) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+async function hmacSha512Hex(secret: string, body: string) {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(secret),
+    { name: "HMAC", hash: "SHA-512" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
+  return Array.from(new Uint8Array(signature))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceRoleKey =
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
+    Deno.env.get("SERVICE_ROLE_KEY") ??
+    "";
+  const paystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
+
+  if (!serviceRoleKey) {
+    return jsonResponse(500, { error: "SUPABASE_SERVICE_ROLE_KEY not set in Supabase secrets" });
+  }
+  if (!supabaseUrl) {
+    return jsonResponse(500, { error: "Supabase configuration missing." });
+  }
+  if (!paystackSecretKey) {
+    return jsonResponse(500, { error: "Paystack configuration missing." });
+  }
+
+  const signature = req.headers.get("x-paystack-signature") ?? "";
+  const bodyText = await req.text();
+  if (!signature) {
+    return jsonResponse(401, { error: "Missing signature" });
+  }
+
+  const computed = await hmacSha512Hex(paystackSecretKey, bodyText);
+  if (computed !== signature) {
+    return jsonResponse(401, { error: "Invalid signature" });
+  }
+
+  let payload: any;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    return jsonResponse(400, { error: "Invalid payload" });
+  }
+
+  const event = String(payload?.event ?? "");
+
+  const data = payload?.data ?? {};
+  const reference = String(data?.reference ?? "").trim();
+  const metadata = data?.metadata ?? {};
+  const orderId = String(metadata?.order_id ?? "").trim();
+  const eventId = data?.id ? String(data.id) : "";
+
+  if (!reference && !orderId && !eventId) {
+    console.log("paystack:webhook:missing_reference");
+    return jsonResponse(200, { ok: true });
+  }
+
+  if (event !== "charge.success") {
+    return jsonResponse(200, { ok: true });
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+
+  const eventBase = {
+    provider: "paystack",
+    event_type: event,
+    event_id: eventId || null,
+    reference: reference || null,
+    order_id: orderId || null,
+    payload,
+  };
+
+  let inserted = false;
+  if (eventId) {
+    const { data: rows, error } = await supabase
+      .from("escrow_events")
+      .insert(eventBase, { onConflict: "provider,event_type,event_id", ignoreDuplicates: true })
+      .select("id")
+      .limit(1);
+    if (error) {
+      return jsonResponse(500, { error: "Failed to log event" });
+    }
+    inserted = !!rows?.[0];
+  } else if (reference) {
+    const { data: rows, error } = await supabase
+      .from("escrow_events")
+      .insert(eventBase, { onConflict: "provider,event_type,reference", ignoreDuplicates: true })
+      .select("id")
+      .limit(1);
+    if (error) {
+      return jsonResponse(500, { error: "Failed to log event" });
+    }
+    inserted = !!rows?.[0];
+  } else {
+    return jsonResponse(200, { ok: true });
+  }
+
+  if (!inserted) {
+    return jsonResponse(200, { ok: true });
+  }
+
+  let resolvedOrderId = orderId;
+  if (!resolvedOrderId && reference) {
+    const { data: orderRows } = await supabase
+      .from("escrow_transactions")
+      .select("id")
+      .eq("payment_reference", reference)
+      .limit(1);
+    resolvedOrderId = String(orderRows?.[0]?.id ?? "").trim();
+  }
+
+  const updates: Record<string, any> = {
+    status: "funded",
+  };
+  if (reference) updates.payment_reference = reference;
+
+  if (resolvedOrderId) {
+    await supabase.from("escrow_transactions").update(updates).eq("id", resolvedOrderId);
+  } else if (reference) {
+    await supabase.from("escrow_transactions").update(updates).eq("payment_reference", reference);
+  }
+
+  console.log("paystack:webhook:processed", { reference, orderId, event });
+  return jsonResponse(200, { ok: true });
+});

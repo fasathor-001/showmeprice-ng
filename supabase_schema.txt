@@ -1,0 +1,789 @@
+-- ============================================================================
+-- ShowMePrice.ng | PRODUCTION SCHEMA (HUBS + SUBCATEGORIES, RLS + INDEXES)
+-- Safe re-run, no trigger/table ordering crashes, enforces: Products must use SUBCATEGORY
+-- Paste into Supabase SQL Editor and RUN.
+-- ============================================================================
+
+BEGIN;
+
+-- ============================================================================
+-- 0) CLEANUP (safe re-run without "relation does not exist" errors)
+-- ============================================================================
+
+-- Drop triggers only if their tables exist (prevents: relation "public.products" does not exist)
+DO $$
+BEGIN
+  IF to_regclass('public.users') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS update_users_mod ON public.users';
+  END IF;
+
+  IF to_regclass('public.businesses') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS update_businesses_mod ON public.businesses';
+  END IF;
+
+  IF to_regclass('public.products') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS update_products_mod ON public.products';
+    EXECUTE 'DROP TRIGGER IF EXISTS on_price_change ON public.products';
+    EXECUTE 'DROP TRIGGER IF EXISTS enforce_product_subcategory ON public.products';
+  END IF;
+  
+  IF to_regclass('public.institutions') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS update_institutions_mod ON public.institutions';
+  END IF;
+END $$;
+
+-- Auth trigger is on auth.users (this is safe)
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
+-- Drop policies (so re-run doesn't fail with "policy already exists")
+DO $$
+BEGIN
+  IF to_regclass('public.states') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Public Read States" ON public.states';
+  END IF;
+
+  IF to_regclass('public.categories') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Public Read Categories" ON public.categories';
+  END IF;
+
+  IF to_regclass('public.users') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Public Read Users" ON public.users';
+    EXECUTE 'DROP POLICY IF EXISTS "User Update Self" ON public.users';
+  END IF;
+
+  IF to_regclass('public.businesses') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Public Read Businesses" ON public.businesses';
+    EXECUTE 'DROP POLICY IF EXISTS "Owner Manage Business" ON public.businesses';
+  END IF;
+
+  IF to_regclass('public.products') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Public Read Products" ON public.products';
+    EXECUTE 'DROP POLICY IF EXISTS "Owner Manage Products" ON public.products';
+  END IF;
+
+  IF to_regclass('public.reviews') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Public Read Reviews" ON public.reviews';
+    EXECUTE 'DROP POLICY IF EXISTS "Authenticated Post Review" ON public.reviews';
+  END IF;
+
+  IF to_regclass('public.institutions') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Users manage own institution" ON public.institutions';
+  END IF;
+
+  IF to_regclass('public.procurement_logs') IS NOT NULL THEN
+    EXECUTE 'DROP POLICY IF EXISTS "Institutions manage own logs" ON public.procurement_logs';
+  END IF;
+END $$;
+
+-- Drop functions
+DROP FUNCTION IF EXISTS public.handle_new_user() CASCADE;
+DROP FUNCTION IF EXISTS public.log_price_change() CASCADE;
+DROP FUNCTION IF EXISTS public.update_timestamp() CASCADE;
+DROP FUNCTION IF EXISTS public.validate_product_category() CASCADE;
+
+-- Drop tables (only the ones used by this schema)
+DROP TABLE IF EXISTS public.reviews CASCADE;
+DROP TABLE IF EXISTS public.price_history CASCADE;
+DROP TABLE IF EXISTS public.products CASCADE;
+DROP TABLE IF EXISTS public.businesses CASCADE;
+DROP TABLE IF EXISTS public.categories CASCADE;
+DROP TABLE IF EXISTS public.states CASCADE;
+DROP TABLE IF EXISTS public.users CASCADE;
+-- Also drop old tables if they exist to avoid confusion
+DROP TABLE IF EXISTS public.profiles CASCADE;
+DROP TABLE IF EXISTS public.memberships CASCADE;
+DROP TABLE IF EXISTS public.violation_logs CASCADE;
+DROP TABLE IF EXISTS public.messages CASCADE;
+DROP TABLE IF EXISTS public.procurement_logs CASCADE;
+DROP TABLE IF EXISTS public.institutions CASCADE;
+
+
+-- Drop enums
+DROP TYPE IF EXISTS user_role CASCADE;
+DROP TYPE IF EXISTS seller_tier CASCADE;
+DROP TYPE IF EXISTS verification_status CASCADE;
+DROP TYPE IF EXISTS product_condition CASCADE;
+
+-- ============================================================================
+-- 1) EXTENSIONS & ENUMS
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TYPE user_role AS ENUM ('buyer', 'seller', 'admin');
+CREATE TYPE seller_tier AS ENUM ('basic', 'verified', 'premium');
+CREATE TYPE verification_status AS ENUM ('pending', 'approved', 'rejected', 'none');
+CREATE TYPE product_condition AS ENUM ('new', 'used', 'refurbished');
+
+-- ============================================================================
+-- 2) TABLES
+-- ============================================================================
+
+-- 2.1 Users
+CREATE TABLE public.users (
+  id UUID REFERENCES auth.users ON DELETE CASCADE PRIMARY KEY,
+  full_name TEXT NOT NULL,
+  email TEXT UNIQUE NOT NULL,
+  role user_role DEFAULT 'buyer',
+  avatar_url TEXT,
+  phone_number TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2.2 States
+CREATE TABLE public.states (
+  id SERIAL PRIMARY KEY,
+  name TEXT UNIQUE NOT NULL,
+  region TEXT,
+  is_popular BOOLEAN DEFAULT FALSE,
+  sort_order INT DEFAULT 0
+);
+
+-- 2.3 Categories (Hubs: parent_id NULL, level 0 | Subcategories: parent_id = hub_id, level 1)
+CREATE TABLE public.categories (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL,
+  icon_name TEXT,
+  parent_id INT REFERENCES public.categories(id) ON DELETE CASCADE,
+  level INT DEFAULT 0,
+  sort_order INT DEFAULT 0
+);
+
+-- 2.4 Businesses
+CREATE TABLE public.businesses (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
+  business_name TEXT NOT NULL,
+  business_type TEXT,
+  description TEXT,
+  verification_tier seller_tier DEFAULT 'basic',
+  verification_status verification_status DEFAULT 'none',
+  state_id INT REFERENCES public.states(id),
+  city TEXT,
+  address TEXT,
+  whatsapp_number TEXT,
+  total_views INT DEFAULT 0,
+  whatsapp_clicks INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2.5 Products (category_id must be a SUBCATEGORY; enforced via trigger below)
+CREATE TABLE public.products (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  business_id UUID REFERENCES public.businesses(id) ON DELETE CASCADE NOT NULL,
+  category_id INT REFERENCES public.categories(id) NOT NULL,
+  state_id INT REFERENCES public.states(id),
+  title TEXT NOT NULL,
+  description TEXT,
+  price DECIMAL(15, 2) NOT NULL,
+  original_price DECIMAL(15, 2),
+  condition product_condition DEFAULT 'new',
+  images TEXT[] DEFAULT '{}'::TEXT[],
+  city TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  is_verified BOOLEAN DEFAULT FALSE,
+  view_count INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2.6 Price History
+CREATE TABLE public.price_history (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  product_id UUID REFERENCES public.products(id) ON DELETE CASCADE NOT NULL,
+  price DECIMAL(15, 2) NOT NULL,
+  recorded_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2.7 Reviews
+CREATE TABLE public.reviews (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  product_id UUID REFERENCES public.products(id) ON DELETE CASCADE NOT NULL,
+  reviewer_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  rating INT CHECK (rating >= 1 AND rating <= 5),
+  title TEXT,
+  comment TEXT,
+  images TEXT[] DEFAULT '{}'::TEXT[],
+  is_verified_purchase BOOLEAN DEFAULT FALSE,
+  helpful_count INT DEFAULT 0,
+  seller_response TEXT,
+  seller_response_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  CONSTRAINT unique_user_product_review UNIQUE (product_id, reviewer_id)
+);
+
+-- 2.8 Messages (Re-adding to support chat features from frontend)
+CREATE TABLE public.messages (
+  id uuid default uuid_generate_v4() primary key,
+  sender_id uuid references public.users(id) not null,
+  receiver_id uuid references public.users(id) not null,
+  product_id uuid references public.products(id), 
+  content text not null,
+  is_read boolean default false,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 2.9 Violation Logs (Re-adding to support anti-leak features)
+CREATE TABLE public.violation_logs (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.users(id),
+  type text not null,
+  original_content text,
+  context text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 2.10 Institutions (Optional Profile for Org Buyers)
+CREATE TABLE public.institutions (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL UNIQUE,
+  org_name TEXT NOT NULL,
+  org_type TEXT NOT NULL, -- School, NGO, Company, Other
+  address TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2.11 Procurement Logs (Ledger for Institutions)
+CREATE TABLE public.procurement_logs (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  institution_id UUID REFERENCES public.institutions(id) ON DELETE CASCADE NOT NULL,
+  product_id UUID REFERENCES public.products(id) ON DELETE SET NULL, -- Nullable if manual entry or product deleted
+  custom_item_name TEXT NOT NULL, -- Fallback or manual name
+  quantity INT DEFAULT 1,
+  unit_price DECIMAL(15, 2) NOT NULL,
+  status TEXT DEFAULT 'planned', -- planned, purchased
+  purchase_date TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================================================
+-- 3) FUNCTIONS & TRIGGERS
+-- ============================================================================
+
+-- 3.1 Update Timestamp
+CREATE OR REPLACE FUNCTION public.update_timestamp()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER update_users_mod
+BEFORE UPDATE ON public.users
+FOR EACH ROW EXECUTE PROCEDURE public.update_timestamp();
+
+CREATE TRIGGER update_businesses_mod
+BEFORE UPDATE ON public.businesses
+FOR EACH ROW EXECUTE PROCEDURE public.update_timestamp();
+
+CREATE TRIGGER update_products_mod
+BEFORE UPDATE ON public.products
+FOR EACH ROW EXECUTE PROCEDURE public.update_timestamp();
+
+CREATE TRIGGER update_institutions_mod
+BEFORE UPDATE ON public.institutions
+FOR EACH ROW EXECUTE PROCEDURE public.update_timestamp();
+
+-- 3.2 Price History Logger (log on insert OR price change)
+CREATE OR REPLACE FUNCTION public.log_price_change()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF (TG_OP = 'INSERT') OR (NEW.price IS DISTINCT FROM OLD.price) THEN
+    INSERT INTO public.price_history (product_id, price)
+    VALUES (NEW.id, NEW.price);
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER on_price_change
+AFTER INSERT OR UPDATE OF price ON public.products
+FOR EACH ROW EXECUTE PROCEDURE public.log_price_change();
+
+-- 3.3 Auth Hook (Handle New User)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  INSERT INTO public.users (id, email, full_name, role, phone_number)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
+    (COALESCE(NEW.raw_user_meta_data->>'user_type', 'buyer'))::user_role,
+    NEW.raw_user_meta_data->>'phone'
+  )
+  ON CONFLICT (id) DO NOTHING;
+
+  -- Create business if seller
+  IF NEW.raw_user_meta_data->>'user_type' = 'seller' THEN
+    INSERT INTO public.businesses (user_id, business_name, business_type, city, whatsapp_number, state_id)
+    VALUES (
+      NEW.id,
+      COALESCE(
+        NEW.raw_user_meta_data->>'business_name',
+        COALESCE(NEW.raw_user_meta_data->>'full_name','') || ' Stores'
+      ),
+      NEW.raw_user_meta_data->>'business_type',
+      NEW.raw_user_meta_data->>'city',
+      NEW.raw_user_meta_data->>'phone',
+      NULLIF(NEW.raw_user_meta_data->>'state_id','')::INT
+    )
+    ON CONFLICT (user_id) DO NOTHING;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- 3.4 Enforce: Products must be assigned to a SUBCATEGORY (parent_id IS NOT NULL)
+CREATE OR REPLACE FUNCTION public.validate_product_category()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  is_subcategory BOOLEAN;
+BEGIN
+  SELECT (parent_id IS NOT NULL)
+  INTO is_subcategory
+  FROM public.categories
+  WHERE id = NEW.category_id;
+
+  IF is_subcategory IS FALSE OR is_subcategory IS NULL THEN
+    RAISE EXCEPTION 'Products must be assigned to a subcategory (a category with a parent), not a main hub.';
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER enforce_product_subcategory
+BEFORE INSERT OR UPDATE OF category_id ON public.products
+FOR EACH ROW EXECUTE PROCEDURE public.validate_product_category();
+
+-- ============================================================================
+-- 4) RLS POLICIES
+-- ============================================================================
+
+ALTER TABLE public.states ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.businesses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.violation_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.institutions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.procurement_logs ENABLE ROW LEVEL SECURITY;
+
+-- States & Categories (Public Read)
+CREATE POLICY "Public Read States"
+ON public.states FOR SELECT
+USING (true);
+
+CREATE POLICY "Public Read Categories"
+ON public.categories FOR SELECT
+USING (true);
+
+-- Users
+CREATE POLICY "Public Read Users"
+ON public.users FOR SELECT
+USING (true);
+
+CREATE POLICY "User Update Self"
+ON public.users FOR UPDATE
+USING (auth.uid() = id)
+WITH CHECK (auth.uid() = id);
+
+-- Businesses
+CREATE POLICY "Public Read Businesses"
+ON public.businesses FOR SELECT
+USING (true);
+
+CREATE POLICY "Owner Manage Business"
+ON public.businesses FOR ALL
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
+
+-- Products
+CREATE POLICY "Public Read Products"
+ON public.products FOR SELECT
+USING (is_active = true);
+
+CREATE POLICY "Owner Manage Products"
+ON public.products FOR ALL
+USING (
+  EXISTS (
+    SELECT 1
+    FROM public.businesses b
+    WHERE b.id = business_id
+      AND b.user_id = auth.uid()
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1
+    FROM public.businesses b
+    WHERE b.id = business_id
+      AND b.user_id = auth.uid()
+  )
+);
+
+-- Reviews
+CREATE POLICY "Public Read Reviews"
+ON public.reviews FOR SELECT
+USING (true);
+
+CREATE POLICY "Authenticated Post Review"
+ON public.reviews FOR INSERT
+WITH CHECK (auth.role() = 'authenticated');
+
+-- MESSAGES
+create policy "Users can see messages sent to or by them" 
+  on public.messages for select 
+  using (auth.uid() = sender_id or auth.uid() = receiver_id);
+
+create policy "Users can insert messages" 
+  on public.messages for insert 
+  with check (auth.uid() = sender_id);
+
+-- VIOLATION LOGS
+create policy "Users can insert logs" 
+  on public.violation_logs for insert 
+  with check (auth.uid() = user_id);
+
+-- INSTITUTIONS
+CREATE POLICY "Users manage own institution" ON public.institutions
+FOR ALL USING (auth.uid() = user_id) WITH CHECK (auth.uid() = user_id);
+
+-- PROCUREMENT LOGS
+CREATE POLICY "Institutions manage own logs" ON public.procurement_logs
+FOR ALL USING (
+  EXISTS (
+    SELECT 1 FROM public.institutions
+    WHERE id = procurement_logs.institution_id
+    AND user_id = auth.uid()
+  )
+) WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.institutions
+    WHERE id = procurement_logs.institution_id
+    AND user_id = auth.uid()
+  )
+);
+
+-- ============================================================================
+-- 5) INDEXES (performance)
+-- ============================================================================
+
+CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON public.categories(parent_id);
+CREATE INDEX IF NOT EXISTS idx_categories_slug ON public.categories(slug);
+
+CREATE INDEX IF NOT EXISTS idx_products_category_id ON public.products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_business_id ON public.products(business_id);
+CREATE INDEX IF NOT EXISTS idx_products_state_id ON public.products(state_id);
+CREATE INDEX IF NOT EXISTS idx_products_is_active_created_at ON public.products(is_active, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_businesses_user_id ON public.businesses(user_id);
+
+CREATE INDEX IF NOT EXISTS idx_price_history_product_id_recorded_at
+ON public.price_history(product_id, recorded_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_procurement_logs_institution_id ON public.procurement_logs(institution_id);
+
+-- ============================================================================
+-- 6) SEED DATA
+-- ============================================================================
+
+-- States (Priority States listed with is_popular=TRUE and sort_order < 100)
+INSERT INTO public.states (id, name, region, is_popular, sort_order) VALUES
+(1, 'Lagos', 'South West', TRUE, 1),
+(2, 'Abuja (FCT)', 'North Central', TRUE, 2),
+(3, 'Rivers', 'South South', TRUE, 3),
+(4, 'Oyo', 'South West', TRUE, 4),
+(5, 'Kano', 'North West', TRUE, 5),
+(6, 'Delta', 'South South', TRUE, 6),
+(7, 'Akwa Ibom', 'South South', TRUE, 7),
+(8, 'Imo', 'South East', TRUE, 8),
+(9, 'Ogun', 'South West', TRUE, 9),
+(10, 'Anambra', 'South East', TRUE, 10),
+-- Others sorted alphabetically after priority
+(11, 'Abia', 'South East', FALSE, 11),
+(12, 'Adamawa', 'North East', FALSE, 12),
+(13, 'Bauchi', 'North East', FALSE, 13),
+(14, 'Bayelsa', 'South South', FALSE, 14),
+(15, 'Benue', 'North Central', FALSE, 15),
+(16, 'Borno', 'North East', FALSE, 16),
+(17, 'Cross River', 'South South', FALSE, 17),
+(18, 'Ebonyi', 'South East', FALSE, 18),
+(19, 'Edo', 'South South', FALSE, 19),
+(20, 'Ekiti', 'South West', FALSE, 20),
+(21, 'Enugu', 'South East', FALSE, 21),
+(22, 'Gombe', 'North East', FALSE, 22),
+(23, 'Jigawa', 'North West', FALSE, 23),
+(24, 'Kaduna', 'North West', FALSE, 24),
+(25, 'Katsina', 'North West', FALSE, 25),
+(26, 'Kebbi', 'North West', FALSE, 26),
+(27, 'Kogi', 'North Central', FALSE, 27),
+(28, 'Kwara', 'North Central', FALSE, 28),
+(29, 'Nasarawa', 'North Central', FALSE, 29),
+(30, 'Niger', 'North Central', FALSE, 30),
+(31, 'Ondo', 'South West', FALSE, 31),
+(32, 'Osun', 'South West', FALSE, 32),
+(33, 'Plateau', 'North Central', FALSE, 33),
+(34, 'Sokoto', 'North West', FALSE, 34),
+(35, 'Taraba', 'North East', FALSE, 35),
+(36, 'Yobe', 'North East', FALSE, 36),
+(37, 'Zamfara', 'North West', FALSE, 37)
+ON CONFLICT (id) DO UPDATE
+SET name = EXCLUDED.name,
+    region = EXCLUDED.region,
+    is_popular = EXCLUDED.is_popular,
+    sort_order = EXCLUDED.sort_order;
+
+SELECT setval('states_id_seq', 100, true);
+
+-- Categories (Hubs)
+INSERT INTO public.categories (id, name, slug, icon_name, level, sort_order) VALUES
+(1, 'Vehicles', 'vehicles', 'Car', 0, 1),
+(2, 'Property', 'property', 'Home', 0, 2),
+(3, 'Mobile Phones & Tablets', 'phones-tablets', 'Smartphone', 0, 3),
+(4, 'Electronics', 'electronics', 'Tv', 0, 4),
+(5, 'Home, Furniture & Appliances', 'home-furniture', 'Armchair', 0, 5),
+(6, 'Health & Beauty', 'health-beauty', 'HeartPulse', 0, 6),
+(7, 'Fashion', 'fashion', 'Shirt', 0, 7),
+(8, 'Agriculture & Food', 'agriculture-food', 'Wheat', 0, 8),
+(9, 'Commercial Equipment & Tools', 'commercial-equipment', 'Briefcase', 0, 9),
+(10, 'Repairs & Construction', 'repairs-construction', 'Hammer', 0, 10),
+(11, 'Babies & Kids', 'babies-kids', 'Baby', 0, 11),
+(12, 'Services', 'services', 'Briefcase', 0, 12),
+(13, 'Animals & Pets', 'animals-pets', 'PawPrint', 0, 13)
+ON CONFLICT (id) DO UPDATE
+SET name = EXCLUDED.name,
+    slug = EXCLUDED.slug,
+    icon_name = EXCLUDED.icon_name;
+
+-- Subcategories (each row links to its hub via parent_id)
+-- Hub 1: Vehicles
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(101, 'Cars', 'cars', 1, 1),
+(102, 'Motorcycles & Scooters', 'motorcycles-scooters', 1, 1),
+(103, 'Tricycles (Keke)', 'tricycles-keke', 1, 1),
+(104, 'Buses & Microbuses', 'buses-microbuses', 1, 1),
+(105, 'Trucks & Trailers', 'trucks-trailers', 1, 1),
+(106, 'Construction & Heavy Machinery', 'construction-heavy', 1, 1),
+(107, 'Watercraft & Boats', 'watercraft-boats', 1, 1),
+(108, 'Vehicle Parts & Accessories', 'vehicle-parts', 1, 1),
+(109, 'Tyres & Rims', 'tyres-rims', 1, 1),
+(110, 'Car Audio & Electronics', 'car-audio', 1, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 2: Property
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(201, 'Houses & Apartments for Rent', 'rent-apartments', 2, 1),
+(202, 'Houses & Apartments for Sale', 'sale-houses', 2, 1),
+(203, 'Shortlets & Guest Houses', 'shortlets', 2, 1),
+(204, 'Land & Plots for Sale', 'land-sale', 2, 1),
+(205, 'Commercial Property for Rent', 'commercial-rent', 2, 1),
+(206, 'Commercial Property for Sale', 'commercial-sale', 2, 1),
+(207, 'Event Centres & Venues', 'event-centres', 2, 1),
+(208, 'Warehouses & Storage', 'warehouses', 2, 1),
+(209, 'Office Space', 'office-space', 2, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 3: Mobile Phones & Tablets
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(301, 'Smartphones', 'smartphones', 3, 1),
+(302, 'Feature Phones', 'feature-phones', 3, 1),
+(303, 'Tablets', 'tablets', 3, 1),
+(304, 'Smart Watches', 'smart-watches', 3, 1),
+(305, 'Smart Glasses', 'smart-glasses', 3, 1),
+(306, 'E-Readers', 'e-readers', 3, 1),
+(307, 'Phone Accessories', 'phone-accessories', 3, 1),
+(308, 'Tablet Accessories', 'tablet-accessories', 3, 1),
+(309, 'Mobile Phone Parts', 'phone-parts', 3, 1),
+(310, 'Power Banks & Chargers', 'power-chargers', 3, 1),
+(311, 'Screen Protectors', 'screen-protectors', 3, 1),
+(312, 'Phone Cases & Covers', 'phone-cases', 3, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 4: Electronics
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(401, 'Laptops', 'laptops', 4, 1),
+(402, 'Desktop Computers', 'desktops', 4, 1),
+(403, 'Computer Accessories', 'computer-accessories', 4, 1),
+(404, 'Printers & Scanners', 'printers-scanners', 4, 1),
+(405, 'Monitors & Displays', 'monitors', 4, 1),
+(406, 'Computer Components', 'computer-components', 4, 1),
+(407, 'Networking Equipment', 'networking-equip', 4, 1),
+(408, 'Routers & Modems', 'routers-modems', 4, 1),
+(409, 'WiFi Extenders', 'wifi-extenders', 4, 1),
+(410, 'TVs & Televisions', 'tvs-televisions', 4, 1),
+(411, 'Home Theater Systems', 'home-theater', 4, 1),
+(412, 'Sound Systems & Speakers', 'sound-systems', 4, 1),
+(413, 'Headphones & Earphones', 'headphones', 4, 1),
+(414, 'Digital Cameras', 'digital-cameras', 4, 1),
+(415, 'DSLR Cameras', 'dslr-cameras', 4, 1),
+(416, 'Camera Lenses', 'camera-lenses', 4, 1),
+(417, 'Camera Accessories', 'camera-accessories', 4, 1),
+(418, 'Video Cameras', 'video-cameras', 4, 1),
+(419, 'Video Game Consoles', 'game-consoles', 4, 1),
+(420, 'Gaming PCs', 'gaming-pcs', 4, 1),
+(421, 'Video Games', 'video-games', 4, 1),
+(422, 'Gaming Accessories', 'gaming-accessories', 4, 1),
+(423, 'Drones', 'drones', 4, 1),
+(424, 'RC Toys & Vehicles', 'rc-toys', 4, 1),
+(425, 'Security Cameras', 'security-cameras', 4, 1),
+(426, 'CCTV Systems', 'cctv', 4, 1),
+(427, 'Alarm Systems', 'alarm-systems', 4, 1),
+(428, 'Smart Locks', 'smart-locks', 4, 1),
+(429, 'Baby Monitors', 'baby-monitors', 4, 1),
+(430, 'Smart Home Devices', 'smart-home', 4, 1),
+(431, 'Smart Lighting', 'smart-lighting', 4, 1),
+(432, 'Smart Plugs', 'smart-plugs', 4, 1),
+(433, 'Voice Assistants', 'voice-assistants', 4, 1),
+(434, 'Solar Panels', 'solar-panels', 4, 1),
+(435, 'Solar Inverters', 'solar-inverters', 4, 1),
+(436, 'Solar Batteries', 'solar-batteries', 4, 1),
+(437, 'UPS Systems', 'ups', 4, 1),
+(438, 'Generators', 'generators', 4, 1),
+(439, 'Power Inverters', 'power-inverters', 4, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 5: Home, Furniture & Appliances
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(501, 'Furniture', 'furniture', 5, 1),
+(502, 'Home Appliances', 'home-appliances', 5, 1),
+(503, 'Kitchen Appliances', 'kitchen-appliances', 5, 1),
+(504, 'Kitchenware & Cookware', 'kitchenware', 5, 1),
+(505, 'Lighting', 'lighting-home', 5, 1),
+(506, 'Storage & Organization', 'storage-org', 5, 1),
+(507, 'Garden Supplies', 'garden-supplies', 5, 1),
+(508, 'Household Chemicals', 'household-chemicals', 5, 1),
+(509, 'Bedding & Bath', 'bedding-bath', 5, 1),
+(510, 'Home Decor', 'home-decor', 5, 1),
+(511, 'Curtains & Blinds', 'curtains', 5, 1),
+(512, 'Air Conditioners & Fans', 'ac-fans', 5, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 6: Health & Beauty
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(601, 'Hair Care & Wigs', 'hair-wigs', 6, 1),
+(602, 'Face & Body Care', 'face-body-care', 6, 1),
+(603, 'Makeup & Cosmetics', 'makeup', 6, 1),
+(604, 'Fragrances & Perfumes', 'fragrances', 6, 1),
+(605, 'Vitamins & Supplements', 'vitamins', 6, 1),
+(606, 'Sexual Wellness', 'sexual-wellness', 6, 1),
+(607, 'Beauty Tools & Accessories', 'beauty-tools', 6, 1),
+(608, 'Massagers', 'massagers', 6, 1),
+(609, 'Medical Equipment', 'medical-equip-hub6', 6, 1),
+(610, 'Dental Care', 'dental-care', 6, 1),
+(611, 'Skin Care', 'skin-care', 6, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 7: Fashion
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(701, 'Men''s Clothing', 'mens-clothing', 7, 1),
+(702, 'Women''s Clothing', 'womens-clothing', 7, 1),
+(703, 'Children''s Clothing', 'childrens-clothing', 7, 1),
+(704, 'Shoes', 'fashion-shoes', 7, 1),
+(705, 'Bags & Luggage', 'bags-luggage', 7, 1),
+(706, 'Jewelry', 'jewelry-fashion', 7, 1),
+(707, 'Watches', 'fashion-watches', 7, 1),
+(708, 'Eyewear', 'eyewear', 7, 1),
+(709, 'Belts & Wallets', 'belts-wallets', 7, 1),
+(710, 'Clothing Accessories', 'clothing-accessories', 7, 1),
+(711, 'Traditional Wear', 'traditional-wear', 7, 1),
+(712, 'Wedding Wear', 'wedding-wear', 7, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 8: Agriculture & Food
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(801, 'Livestock & Poultry', 'livestock-poultry', 8, 1),
+(802, 'Feeds, Supplements & Seeds', 'feeds-seeds', 8, 1),
+(803, 'Farm Machinery & Equipment', 'farm-machinery', 8, 1),
+(804, 'Foodstuffs & Provisions', 'foodstuffs', 8, 1),
+(805, 'Drinks & Beverages', 'drinks-beverages', 8, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 9: Commercial Equipment & Tools
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(901, 'Industrial Machinery', 'industrial-machinery', 9, 1),
+(902, 'Manufacturing Equipment', 'manufacturing-equip', 9, 1),
+(903, 'Restaurant & Catering Equipment', 'catering-equip', 9, 1),
+(904, 'Salon & Spa Equipment', 'salon-equip', 9, 1),
+(905, 'Medical Supplies & Equipment', 'medical-supplies', 9, 1),
+(906, 'Office & Stationery Supplies', 'office-supplies', 9, 1),
+(907, 'Safety Gear & Wear', 'safety-gear', 9, 1),
+(908, 'Power Tools & Hand Tools', 'power-tools', 9, 1),
+(909, 'Printing Equipment', 'printing-equip', 9, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 10: Repairs & Construction
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(1001, 'Building Materials', 'building-materials', 10, 1),
+(1002, 'Plumbing & Water Supply', 'plumbing-water', 10, 1),
+(1003, 'Electrical Equipment', 'electrical-equip', 10, 1),
+(1004, 'Doors, Windows & Glass', 'doors-windows', 10, 1),
+(1005, 'Painting & Decorating', 'painting-decorating', 10, 1),
+(1006, 'Roofing & Flooring', 'roofing-flooring', 10, 1),
+(1007, 'Solar & Energy Equipment', 'solar-energy-construction', 10, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 11: Babies & Kids
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(1101, 'Baby Gear & Safety', 'baby-gear', 11, 1),
+(1102, 'Baby Furniture', 'baby-furniture', 11, 1),
+(1103, 'School Supplies', 'school-supplies', 11, 1),
+(1104, 'Toys & Games', 'toys-games', 11, 1),
+(1105, 'Maternity & Pregnancy', 'maternity', 11, 1),
+(1106, 'Diapers & Daily Care', 'diapers-care', 11, 1),
+(1107, 'Kids Clothing', 'kids-clothing', 11, 1),
+(1108, 'Kids Shoes', 'kids-shoes', 11, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 12: Services
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(1201, 'Automotive Services', 'automotive-services', 12, 1),
+(1202, 'Building & Trade Services', 'building-services', 12, 1),
+(1203, 'Cleaning Services', 'cleaning-services', 12, 1),
+(1204, 'Computer & IT Services', 'it-services', 12, 1),
+(1205, 'DJ & Entertainment Services', 'entertainment-services', 12, 1),
+(1206, 'Party, Catering & Event Services', 'party-services', 12, 1),
+(1207, 'Health & Beauty Services', 'beauty-services', 12, 1),
+(1208, 'Legal Services', 'legal-services', 12, 1),
+(1209, 'Classes & Courses', 'classes-courses', 12, 1),
+(1210, 'Travel & Visa Services', 'travel-services', 12, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- Hub 13: Animals & Pets
+INSERT INTO public.categories (id, name, slug, parent_id, level) VALUES
+(1301, 'Dogs', 'dogs', 13, 1),
+(1302, 'Cats', 'cats', 13, 1),
+(1303, 'Birds', 'birds', 13, 1),
+(1304, 'Fish', 'fish', 13, 1),
+(1305, 'Reptiles', 'reptiles', 13, 1),
+(1306, 'Pet Food & Accessories', 'pet-food', 13, 1),
+(1307, 'Pet Services', 'pet-services', 13, 1)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+SELECT setval('categories_id_seq', 2000, true);
+
+COMMIT;

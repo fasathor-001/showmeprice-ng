@@ -1,0 +1,362 @@
+import React, { useEffect, useMemo, useState } from "react";
+import Layout from "./components/layout/Layout";
+import AccountShell from "./components/layout/AccountShell";
+
+import HomePage from "./pages/HomePage";
+import MarketplacePage from "./pages/MarketplacePage";
+import DealsPage from "./pages/DealsPage";
+import DeliveryPage from "./pages/DeliveryPage";
+
+import DashboardPage from "./pages/DashboardPage";
+import InboxPage from "./pages/InboxPage";
+import SavedPage from "./pages/SavedPage";
+import NotificationsPage from "./pages/NotificationsPage";
+import SettingsPage from "./pages/SettingsPage";
+import SellerProfileSetupPage from "./pages/SellerProfileSetupPage";
+import ProfilePage from "./pages/ProfilePage";
+import MyShopPage from "./pages/MyShopPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
+import ReportsPage from "./pages/ReportsPage";
+import HelpPage from "./pages/HelpPage";
+import AdminDashboard from "./pages/AdminDashboard";
+
+import { useAuth } from "./hooks/useAuth";
+import { supabase } from "./lib/supabase";
+
+type InboxInit = {
+  partnerId: string;
+  productId: string;
+  partnerName?: string;
+  message?: string;
+  returnTo?: string;
+};
+
+function nav(to: string) {
+  if (typeof window === "undefined") return;
+  if (window.location.pathname === to) return;
+  window.history.pushState({}, "", to);
+  window.dispatchEvent(new Event("smp:navigate"));
+}
+
+function safeStr(v: any) {
+  return String(v ?? "").trim();
+}
+
+function sellerSetupKey(userId: string) {
+  return `smp:seller_setup_complete:${userId}`;
+}
+
+function markSellerSetup(userId: string, done: boolean) {
+  try {
+    const k = sellerSetupKey(userId);
+    if (done) localStorage.setItem(k, "1");
+    else localStorage.removeItem(k);
+  } catch {}
+}
+
+function wasSellerSetupDone(userId: string) {
+  try {
+    return localStorage.getItem(sellerSetupKey(userId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function isBusinessComplete(biz: any) {
+  const b = biz || {};
+  const whatsapp = safeStr(b.whatsapp_number ?? b.whatsapp);
+  const stateOk = b.state_id !== null && b.state_id !== undefined && String(b.state_id).trim() !== "";
+  return (
+    safeStr(b.business_name).length > 0 &&
+    safeStr(b.business_type).length > 0 &&
+    safeStr(b.city).length > 0 &&
+    safeStr(b.address).length > 0 &&
+    whatsapp.length > 0 &&
+    stateOk
+  );
+}
+
+export default function App() {
+  const { user } = useAuth();
+
+  const [path, setPath] = useState<string>(() =>
+    typeof window !== "undefined" ? window.location.pathname : "/"
+  );
+
+  const [inboxInit, setInboxInit] = useState<InboxInit | null>(null);
+  const [sellerNeedsSetup, setSellerNeedsSetup] = useState<boolean>(false);
+
+  // ✅ Router listeners (THIS FIXES "Overview not working")
+  useEffect(() => {
+    const onViewInbox = (e: Event) => {
+      const ce = e as CustomEvent<any>;
+      const payload = ce?.detail ?? null;
+
+      if (payload?.partnerId) {
+        // Normalize + keep in memory (for immediate render) and sessionStorage (for reload recovery)
+        const clean: InboxInit = {
+          partnerId: String(payload.partnerId),
+          productId: payload.productId ? String(payload.productId) : "",
+          partnerName: payload.partnerName ? String(payload.partnerName) : undefined,
+          message: payload.message ? String(payload.message) : undefined,
+          returnTo: payload.returnTo ? String(payload.returnTo) : undefined,
+        };
+
+        try {
+          setInboxInit(clean);
+        } catch {
+          // ignore
+        }
+
+        try {
+          sessionStorage.setItem("smp:view-inbox", JSON.stringify(clean));
+        } catch {
+          // ignore
+        }
+      }
+
+      // Navigate using your existing nav() helper
+      nav("/inbox");
+    };
+
+    window.addEventListener("smp:view-inbox", onViewInbox as any);
+    return () => window.removeEventListener("smp:view-inbox", onViewInbox as any);
+  }, []);
+
+  // If the user refreshes on /inbox, recover the deep-link payload from sessionStorage
+  useEffect(() => {
+    if (path !== "/inbox") return;
+    if (inboxInit) return;
+    try {
+      const raw = sessionStorage.getItem("smp:view-inbox");
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed?.partnerId) return;
+
+      const clean: InboxInit = {
+        partnerId: String(parsed.partnerId),
+        productId: parsed.productId ? String(parsed.productId) : "",
+        partnerName: parsed.partnerName ? String(parsed.partnerName) : undefined,
+        message: parsed.message ? String(parsed.message) : undefined,
+        returnTo: parsed.returnTo ? String(parsed.returnTo) : undefined,
+      };
+      setInboxInit(clean);
+    } catch {
+      // ignore
+    }
+  }, [path]);
+
+  const protectedPaths = useMemo(
+    () =>
+      new Set([
+        "/dashboard",
+        "/settings",
+        "/my-shop",
+        "/seller/setup",
+        "/inbox",
+        "/saved",
+        "/notifications",
+        "/help",
+        "/analytics",
+        "/reports",
+        "/admin",
+      ]),
+    []
+  );
+
+  // Seller setup enforcement (server-safe: we verify from DB, but never trap user on transient failures)
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      if (!user) {
+        if (alive) setSellerNeedsSetup(false);
+        return;
+      }
+
+      try {
+        // Read user_type (NO .single/.maybeSingle)
+        const { data: pRows, error: pErr } = await supabase
+          .from("profiles")
+          .select("user_type,role")
+          .eq("id", user.id)
+          .limit(1);
+
+        if (pErr) throw pErr;
+
+        const metaType = (user as any)?.user_metadata?.user_type;
+        const userType = String(pRows?.[0]?.user_type ?? metaType ?? "buyer").toLowerCase();
+
+        if (userType !== "seller") {
+          if (alive) setSellerNeedsSetup(false);
+          return;
+        }
+
+        // Business row
+        const { data: bizRows, error: bErr } = await supabase
+          .from("businesses")
+          .select("*")
+          .eq("user_id", user.id)
+          .limit(1);
+
+        if (bErr) throw bErr;
+
+        const biz = bizRows?.[0] ?? null;
+        const needs = !isBusinessComplete(biz);
+
+        if (!alive) return;
+
+        setSellerNeedsSetup(needs);
+
+        // Cache completion so a temporary schema/RLS issue won't trap seller
+        if (!needs) markSellerSetup(user.id, true);
+        else markSellerSetup(user.id, false);
+
+        // Only enforce redirect on key seller pages (not on /seller/setup itself)
+        const enforceSet = new Set<string>(["/dashboard", "/my-shop", "/analytics", "/reports"]);
+        if (needs && path !== "/seller/setup" && enforceSet.has(path)) {
+          nav("/seller/setup");
+        }
+      } catch {
+        // PRODUCTION FAIL-SAFE:
+        // If we have ever completed setup before, do not trap seller in /seller/setup.
+        if (!alive) return;
+        if (user?.id && wasSellerSetupDone(user.id)) setSellerNeedsSetup(false);
+        else setSellerNeedsSetup(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [user, path]);
+
+  // Basic auth routing: if user is not signed in, allow public pages; protected pages render HomePage
+  const isProtected = protectedPaths.has(path);
+
+  // ---- Route selection (order matters) ----
+  let page: React.ReactNode = <HomePage />;
+
+  if (path === "/") page = <HomePage />;
+
+  if (path === "/marketplace") page = <MarketplacePage />;
+
+  if (path === "/deals") page = <DealsPage />;
+  if (path === "/delivery") page = <DeliveryPage />;
+
+  if (isProtected && !user) {
+    // Keep URL; HomePage can show login modal
+    page = <HomePage />;
+    return <Layout>{page}</Layout>;
+  }
+
+  if (path === "/dashboard") {
+    page = (
+      <AccountShell title="Dashboard">
+        <DashboardPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/inbox") {
+    page = (
+      <AccountShell title="Messages">
+        <InboxPage
+          initialChat={
+            inboxInit
+              ? {
+                  partnerId: inboxInit.partnerId,
+                  productId: inboxInit.productId,
+                  partnerName: inboxInit.partnerName,
+                  message: inboxInit.message,
+                }
+              : undefined
+          }
+        />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/saved") {
+    page = (
+      <AccountShell title="Saved Items">
+        <SavedPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/notifications") {
+    page = (
+      <AccountShell title="Notifications">
+        <NotificationsPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/settings") {
+    page = (
+      <AccountShell title="Profile & Settings">
+        <SettingsPage />
+      </AccountShell>
+    );
+  }
+
+  // IMPORTANT: allow sellers to open /seller/setup anytime (do NOT redirect away after setup)
+  if (path === "/seller/setup") {
+    page = (
+      <AccountShell title={sellerNeedsSetup ? "Complete Seller Profile" : "Seller Profile"}>
+        <SellerProfileSetupPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/my-shop") {
+    page = (
+      <AccountShell title="Seller Dashboard">
+        <MyShopPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/analytics") {
+    page = (
+      <AccountShell title="Analytics">
+        <AnalyticsPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/reports") {
+    page = (
+      <AccountShell title="Reports">
+        <ReportsPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/profile") {
+    page = (
+      <AccountShell title="Profile">
+        <ProfilePage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/help") {
+    page = (
+      <AccountShell title="Help & Support">
+        <HelpPage />
+      </AccountShell>
+    );
+  }
+
+  if (path === "/admin") {
+    page = (
+      <AccountShell title="Admin">
+        <AdminDashboard onNavigateHome={() => nav("/")} />
+      </AccountShell>
+    );
+  }
+
+  return <Layout>{page}</Layout>;
+}

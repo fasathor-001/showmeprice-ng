@@ -1,0 +1,52 @@
+
+-- ============================================================================
+-- PHASE 6 CORRECTION: USER-LEVEL MEMBERSHIP
+-- Enables Buyers to be Premium (required for contact viewing)
+-- Run this in Supabase SQL Editor
+-- ============================================================================
+
+BEGIN;
+
+-- 1. Add membership_tier to users table
+ALTER TABLE public.users 
+ADD COLUMN IF NOT EXISTS membership_tier TEXT DEFAULT 'free';
+
+-- 2. Update the Upgrade Function to handle User Level + Business Level sync
+CREATE OR REPLACE FUNCTION public.process_premium_upgrade(
+    p_user_id UUID, 
+    p_reference TEXT, 
+    p_amount DECIMAL
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    -- 1. Log Transaction
+    INSERT INTO public.transactions (user_id, reference, amount, status, plan_type)
+    VALUES (p_user_id, p_reference, p_amount, 'success', 'premium');
+
+    -- 2. Upgrade User Membership (The Source of Truth for Gates)
+    -- We map the 'premium' purchase to the 'business' tier in our logic (highest level)
+    UPDATE public.users
+    SET membership_tier = 'business',
+        updated_at = NOW()
+    WHERE id = p_user_id;
+
+    -- 3. If User is ALSO a Seller, upgrade their Business Profile (Visual Badge)
+    -- We don't error if they aren't a seller, because Buyers can upgrade too now.
+    UPDATE public.businesses
+    SET verification_tier = 'premium',
+        verification_status = CASE 
+            WHEN verification_status = 'none' THEN 'approved' 
+            ELSE verification_status 
+        END,
+        updated_at = NOW()
+    WHERE user_id = p_user_id;
+
+    RETURN TRUE;
+END;
+$$;
+
+COMMIT;

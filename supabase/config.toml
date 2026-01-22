@@ -1,0 +1,17 @@
+[functions.invite-admin]
+verify_jwt = false
+
+[functions.revoke-admin]
+verify_jwt = false
+
+[functions.paystack_webhook]
+verify_jwt = false
+
+[functions.verify_escrow_status]
+verify_jwt = false
+
+[functions.create_escrow_order]
+verify_jwt = false
+
+[functions.escrow_actions]
+verify_jwt = false

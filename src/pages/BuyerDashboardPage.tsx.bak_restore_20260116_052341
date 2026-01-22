@@ -1,0 +1,337 @@
+﻿import { useFF } from "../hooks/useFF";
+import React, { useEffect, useRef, useState } from "react";
+import { useAuth } from "../hooks/useAuth";
+import { useFeatureFlags } from "../hooks/useFeatureFlags";
+import { useMembership } from "../hooks/useMembership";
+import { useProfile } from "../hooks/useProfile";
+
+function TruckIcon({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
+      <path d="M3 7h11v10H3V7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+      <path d="M14 10h4l3 3v4h-7v-7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+      <path d="M7 20a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" stroke="currentColor" strokeWidth="2"/>
+      <path d="M17 20a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" stroke="currentColor" strokeWidth="2"/>
+    </svg>
+  );
+}
+
+export default function Navbar() {
+  const { user, signOut } = useAuth();
+  
+  const { profile } = useProfile();
+const { isPremium } = useMembership();
+    const { delivery } = useFF();
+  const deliveryEnabled = !!delivery;
+const { getFlag } = useFeatureFlags();
+
+  const dealsEnabled = !!getFlag?.("deals_enabled")?.enabled;
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const toggleRef = useRef<HTMLButtonElement | null>(null);
+
+  //  For pages that use URL routing (App.tsx minimal router)
+  const navigateToPath = (to: string) => {
+    window.history.pushState({}, "", to);
+    window.dispatchEvent(new Event("smp:navigate"));
+    setIsMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
+  const goHome = () => navigateToPath("/");
+
+  const openRegisterModal = () => {
+    if (typeof (window as any).openRegisterModal === "function") {
+      (window as any).openRegisterModal();
+    }
+  };
+
+  const openAuthModal = () => {
+    if (typeof (window as any).openAuthModal === "function") {
+      (window as any).openAuthModal();
+    }
+  };
+
+  const openPostItemModal = () => {
+    try {
+      delete (window as any).__smp_post_kind;
+    } catch {}
+    setIsMenuOpen(false);
+    const fn = (window as any).openPostItemModal;
+    if (typeof fn === "function") fn();
+  };
+
+  const navigateToDashboard = () => {
+    try {
+      delete (window as any).__smp_post_kind;
+    } catch {}
+    window.dispatchEvent(new Event("smp:view-dashboard"));
+    setIsMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
+  const navigateToPricing = () => {
+    window.dispatchEvent(new Event("smp:view-pricing"));
+    setIsMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
+  const navigateToProfile = () => {
+    window.dispatchEvent(new Event("smp:view-profile"));
+    setIsMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
+  const navigateToInbox = () => {
+    window.dispatchEvent(new Event("smp:view-inbox"));
+    setIsMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
+  const navigateToInstitution = () => {
+    window.dispatchEvent(new Event("smp:view-institution"));
+    setIsMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
+  const navigateToAdmin = () => {
+    window.dispatchEvent(new Event("smp:view-admin"));
+    setIsMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    setIsMenuOpen(false);
+    window.location.href = "/";
+  };
+
+  const isAdmin = (profile as any)?.role === "admin";
+
+  // seller detection (supports either user_metadata or profile)
+  const isSeller =
+    ((profile as any)?.user_type ?? (user?.user_metadata as any)?.user_type) === "seller" ||
+    (profile as any)?.user_type === "seller" ||
+    (profile as any)?.role === "seller";
+
+  // ✅ Close dropdown: ESC + outside tap/click (mobile-safe)
+  useEffect(() => {
+    if (!isMenuOpen) return;
+
+    const onPointerDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (toggleRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setIsMenuOpen(false);
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsMenuOpen(false);
+    };
+
+    document.addEventListener("pointerdown", onPointerDown, { capture: true });
+    document.addEventListener("keydown", onKey);
+
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, { capture: true });
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [isMenuOpen]);
+
+  return (
+    <nav className="bg-white border-b sticky top-0 z-50 h-16 flex items-center shadow-sm">
+      <div className="container mx-auto px-4 flex justify-between items-center">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={goHome}>
+          <div className="h-9 w-9 rounded-full bg-brand flex items-center justify-center">
+            <span className="text-white font-bold text-sm">SMP</span>
+          </div>
+          <span className="text-xl font-black text-slate-800">
+            ShowMePrice<span className="text-brand">.ng</span>
+          </span>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {dealsEnabled && (
+            <button
+              onClick={() => navigateToPath("/deals")}
+              className="text-slate-700 font-bold text-sm hover:text-brand whitespace-nowrap hidden md:block px-2"
+            >
+              Deals
+            </button>
+
+          )}
+
+          <button
+            onClick={() => navigateToPath("/categories")}
+            className="text-slate-700 font-bold text-sm hover:text-brand whitespace-nowrap hidden md:block px-2"
+          >
+            Categories
+          </button>
+
+          <button
+            onClick={openPostItemModal}
+            className="text-brand font-bold text-sm hover:underline whitespace-nowrap hidden md:block px-2"
+          >
+            Post Ad
+          </button>
+
+          {!user ? (
+            <>
+              <button
+                onClick={openRegisterModal}
+                className="bg-brand text-white px-4 py-2 rounded-lg font-bold text-xs hover:opacity-90 whitespace-nowrap"
+              >
+                Sell / Register
+              </button>
+              <button
+                onClick={openAuthModal}
+                className="text-slate-600 font-bold text-sm hover:text-brand whitespace-nowrap"
+              >
+                Sign In
+              </button>
+            </>
+          ) : (
+            <div className="relative z-50">
+              <button
+                ref={toggleRef}
+                onClick={() => setIsMenuOpen((v) => !v)}
+                className="flex items-center gap-2 text-slate-700 font-bold text-sm hover:text-brand"
+              >
+                <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center border text-slate-500 relative">
+                  {isPremium ? (
+                    <i data-lucide="crown" className="w-4 h-4 text-amber-500 fill-amber-500"></i>
+                  ) : (
+                    <i data-lucide="user" className="w-4 h-4"></i>
+                  )}
+                </div>
+                <span className="hidden md:inline">
+                  {(user.user_metadata as any)?.full_name || "My Account"}
+                </span>
+                <i data-lucide="chevron-down" className="w-4 h-4"></i>
+              </button>
+
+              {isMenuOpen && (
+                <>
+                  {/*  Mobile-safe backdrop: tap anywhere outside closes */}
+                  <button
+                    aria-label="Close menu"
+                    className="fixed inset-0 z-40 cursor-default"
+                    onClick={() => setIsMenuOpen(false)}
+                  />
+
+                  <div
+                    ref={menuRef}
+                    className="absolute right-0 mt-2 w-56 bg-white rounded-xl shadow-xl border py-2 animate-view z-50"
+                  >
+                    <div className="px-4 py-2 border-b border-slate-50 mb-1">
+                      <p className="text-xs text-slate-500 truncate">{user.email}</p>
+
+                      {isPremium && (
+                        <span className="inline-block mt-1 bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-200">
+                          PREMIUM
+                        </span>
+                      )}
+
+                      {isAdmin && (
+                        <span className="inline-block mt-1 ml-1 bg-slate-800 text-white text-[10px] font-bold px-2 py-0.5 rounded-full border border-slate-700">
+                          ADMIN
+                        </span>
+                      )}
+                    </div>
+
+                    {isSeller && (
+                      <>
+                        <button
+                          onClick={navigateToDashboard}
+                          className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand flex items-center gap-2"
+                        >
+                          <i data-lucide="layout-dashboard" className="w-4 h-4"></i> Seller Dashboard
+                        </button>
+
+                        <button
+                          onClick={() => navigateToPath("/my-shop")}
+                          className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand flex items-center gap-2"
+                        >
+                          <i data-lucide="store" className="w-4 h-4"></i> My Shop
+                        </button>
+                      </>
+                    )}
+
+                    {dealsEnabled && (
+                      <button
+                        onClick={() => navigateToPath("/deals")}
+                        className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand flex items-center gap-2"
+                      >
+                        <i data-lucide="tag" className="w-4 h-4"></i> Deals
+                      </button>
+
+
+                    )}
+
+                    <button
+                      onClick={navigateToInbox}
+                      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand flex items-center gap-2"
+                    >
+                      <i data-lucide="message-square" className="w-4 h-4"></i> Messages
+                    </button>
+
+                    <button
+                      onClick={navigateToInstitution}
+                      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand flex items-center gap-2"
+                    >
+                      <i data-lucide="building-2" className="w-4 h-4"></i> Institution Tools
+                    </button>
+
+                    <button
+                      onClick={navigateToProfile}
+                      className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-brand flex items-center gap-2"
+                    >
+                      <i data-lucide="settings" className="w-4 h-4"></i> Profile Settings
+                    </button>
+
+                    {isAdmin && (
+                      <button
+                        onClick={navigateToAdmin}
+                        className="w-full text-left px-4 py-2 text-sm text-slate-800 bg-slate-50 hover:bg-slate-100 hover:text-slate-900 flex items-center gap-2 font-bold border-y border-slate-100 mt-1 mb-1"
+                      >
+                        <i data-lucide="shield-check" className="w-4 h-4 text-emerald-500"></i> Admin Panel
+                      </button>
+                    )}
+
+                    {!isPremium && (
+                      <button
+                        onClick={navigateToPricing}
+                        className="w-full text-left px-4 py-2 text-sm text-amber-600 hover:bg-amber-50 flex items-center gap-2 font-bold"
+                      >
+                        <i data-lucide="sparkles" className="w-4 h-4"></i> Upgrade Plan
+                      </button>
+                    )}
+
+                    <div className="border-t border-slate-50 my-1"></div>
+
+                    <button
+                      onClick={handleSignOut}
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                    >
+                      <i data-lucide="log-out" className="w-4 h-4"></i> Sign Out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </nav>
+  );
+}
+
+
+
+
+
+
+
+
+

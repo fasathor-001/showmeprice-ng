@@ -1,0 +1,179 @@
+﻿// src/hooks/useProfile.ts
+import { useCallback, useEffect, useRef, useState } from "react";
+import { supabase } from "../lib/supabase";
+import type { Business } from "../types";
+
+export type ProfileRow = {
+  id: string;
+  full_name?: string | null;
+  display_name?: string | null;
+  username?: string | null;
+  user_type?: "buyer" | "seller" | string | null;
+  role?: string | null;
+  phone?: string | null;
+  city?: string | null;
+  state_id?: number | null;
+  business_name?: string | null;
+  business_type?: string | null;
+  membership_tier?: string | null;
+  language?: string | null;
+  notifications_enabled?: boolean | null;
+  chats_disabled?: boolean | null;
+  feedback_disabled?: boolean | null;
+  [key: string]: any;
+};
+
+type State = {
+  profile: ProfileRow | null;
+  business: Business | null;
+  loading: boolean;
+  error: string | null;
+};
+
+type Cache = {
+  userId: string;
+  profile: ProfileRow | null;
+  business: Business | null;
+  ts: number;
+};
+
+const CACHE_TTL = 2 * 60 * 1000; // 2 minutes
+
+function getCache(): Cache | null {
+  try {
+    return (window as any).__SMP_PROFILE_CACHE__ ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setCache(c: Cache) {
+  try {
+    (window as any).__SMP_PROFILE_CACHE__ = c;
+  } catch {}
+}
+
+async function getAuthedUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data?.session?.user?.id ?? null;
+}
+
+export function useProfile() {
+  const requestIdRef = useRef(0);
+  const authSubRef = useRef<ReturnType<typeof supabase.auth.onAuthStateChange> | null>(null);
+
+  const cached = getCache();
+
+  const [state, setState] = useState<State>(() => {
+    if (cached?.userId && Date.now() - cached.ts < CACHE_TTL) {
+      return {
+        profile: cached.profile,
+        business: cached.business,
+        loading: false, // ⬅️ IMPORTANT: cache is considered ready
+        error: null,
+      };
+    }
+    return { profile: null, business: null, loading: true, error: null };
+  });
+
+  const refresh = useCallback(async () => {
+    const reqId = ++requestIdRef.current;
+
+    // Do NOT wipe existing data during refresh
+    setState((s) => ({ ...s, loading: true, error: null }));
+
+    try {
+      const userId = await getAuthedUserId();
+
+      // Not logged in
+      if (!userId) {
+        if (reqId !== requestIdRef.current) return;
+        setState({
+          profile: null,
+          business: null,
+          loading: false,
+          error: null,
+        });
+        return;
+      }
+
+      // PROFILE
+      const { data: profileRow, error: pErr } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (pErr) {
+        console.error("useProfile: profile fetch failed", pErr);
+      }
+
+      // BUSINESS
+      const { data: bizRow, error: bErr } = await supabase
+        .from("businesses")
+        .select("*")
+        .eq("user_id", userId)
+        .maybeSingle();
+
+      if (bErr) {
+        console.error("useProfile: business fetch failed", bErr);
+      }
+
+      if (reqId !== requestIdRef.current) return;
+
+      const profile = (profileRow as ProfileRow) ?? null;
+      const business = (bizRow as Business) ?? null;
+
+      setState({
+        profile,
+        business,
+        loading: false,
+        error: null,
+      });
+
+      setCache({
+        userId,
+        profile,
+        business,
+        ts: Date.now(),
+      });
+    } catch (e: any) {
+      if (reqId !== requestIdRef.current) return;
+
+      console.error("useProfile: fetch failed", e);
+
+      // ⬅️ CRITICAL: never destroy existing UI on network failure
+      setState((s) => ({
+        ...s,
+        loading: false,
+        error: e?.message ?? "Failed to load profile",
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+
+    // Ensure SINGLE auth subscription
+    if (!authSubRef.current) {
+      authSubRef.current = supabase.auth.onAuthStateChange(() => {
+        refresh();
+      });
+    }
+
+    return () => {
+      authSubRef.current?.data?.subscription?.unsubscribe();
+      authSubRef.current = null;
+    };
+  }, [refresh]);
+
+  return {
+    profile: state.profile,
+    business: state.business,
+    loading: state.loading,
+    error: state.error,
+    refresh,
+  };
+}
+
+export default useProfile;

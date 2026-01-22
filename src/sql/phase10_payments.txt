@@ -1,0 +1,71 @@
+
+-- ============================================================================
+-- PHASE 10 MIGRATION: PAYMENTS & TRANSACTIONS
+-- Run this in Supabase SQL Editor
+-- ============================================================================
+
+BEGIN;
+
+-- 1. Create Transactions Table
+CREATE TABLE IF NOT EXISTS public.transactions (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    user_id UUID REFERENCES public.users(id) NOT NULL,
+    reference TEXT UNIQUE NOT NULL,
+    amount DECIMAL(15, 2) NOT NULL,
+    status TEXT DEFAULT 'success',
+    plan_type TEXT NOT NULL, -- 'premium'
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Enable RLS
+ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+
+-- 3. Policy: Users can view their own transactions
+DROP POLICY IF EXISTS "Users view own transactions" ON public.transactions;
+CREATE POLICY "Users view own transactions" 
+ON public.transactions FOR SELECT 
+USING (auth.uid() = user_id);
+
+-- 4. Function to Record Payment & Upgrade User
+-- Note: In a production app, verify the reference via backend edge function before upgrading.
+CREATE OR REPLACE FUNCTION public.process_premium_upgrade(
+    p_user_id UUID, 
+    p_reference TEXT, 
+    p_amount DECIMAL
+)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER -- Runs with admin privileges to update businesses
+SET search_path = public
+AS $$
+DECLARE
+    v_business_id UUID;
+BEGIN
+    -- 1. Check if business exists for user
+    SELECT id INTO v_business_id FROM public.businesses WHERE user_id = p_user_id;
+    
+    IF v_business_id IS NULL THEN
+        RAISE EXCEPTION 'No business profile found for this user';
+    END IF;
+
+    -- 2. Log Transaction (Idempotency check via UNIQUE reference constraint)
+    INSERT INTO public.transactions (user_id, reference, amount, status, plan_type)
+    VALUES (p_user_id, p_reference, p_amount, 'success', 'premium');
+
+    -- 3. Upgrade Business Tier
+    UPDATE public.businesses
+    SET verification_tier = 'premium',
+        -- Optionally auto-verify if payment implies trust, or keep 'pending' if manual check needed.
+        -- We will set to 'verified' status so they get the badge immediately.
+        verification_status = CASE 
+            WHEN verification_status = 'none' THEN 'approved' 
+            ELSE verification_status 
+        END,
+        updated_at = NOW()
+    WHERE id = v_business_id;
+
+    RETURN TRUE;
+END;
+$$;
+
+COMMIT;

@@ -1,0 +1,511 @@
+// src/components/layout/AccountShell.tsx
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../hooks/useAuth";
+import { useProfile } from "../../hooks/useProfile";
+import { useFF } from "../../hooks/useFF";
+import { useUnreadMessagesCount } from "../../hooks/useUnreadMessagesCount";
+import {
+  LayoutDashboard,
+  Heart,
+  MessageSquare,
+  Bell,
+  HelpCircle,
+  LogOut,
+  ChevronRight,
+  Store,
+  Tag,
+  Truck,
+  BarChart3,
+  FileText,
+  User2,
+  Wrench,
+  Menu,
+  X,
+  ArrowLeft,
+} from "lucide-react";
+
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+function useCurrentPath() {
+  const [path, setPath] = useState<string>(() => window.location.pathname || "/");
+  useEffect(() => {
+    const onChange = () => setPath(window.location.pathname || "/");
+    window.addEventListener("popstate", onChange);
+    window.addEventListener("smp:navigate", onChange as any);
+    return () => {
+      window.removeEventListener("popstate", onChange);
+      window.removeEventListener("smp:navigate", onChange as any);
+    };
+  }, []);
+  return path;
+}
+
+type Item = {
+  key: string;
+  label: string;
+  to?: string;
+  onClick?: () => void;
+  icon: React.ComponentType<{ className?: string }>;
+  show?: boolean;
+  badge?: number;
+};
+
+export default function AccountShell({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  const { user } = useAuth();
+  const { profile } = useProfile() as any;
+  const FF = useFF() as any;
+  const navigate = useNavigate();
+
+  const path = useCurrentPath();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const role = String((profile as any)?.role ?? "user").toLowerCase();
+  const userType = String((profile as any)?.user_type ?? "buyer").toLowerCase();
+  const isAdmin = role === "admin";
+  const isSeller = userType === "seller";
+
+  // Feature flags (useFF already maps to canonical keys)
+  const messagingEnabled = !!FF?.messaging; // in_app_messaging_enabled
+  const dealsEnabled = !!FF?.deals;
+  const dealsPostingEnabled = !!FF?.dealsPosting;
+  const deliveryEnabled = !!FF?.delivery;
+
+  // ✅ Poll unread count; hide badge when messaging is disabled
+  const unreadRaw = useUnreadMessagesCount(15000);
+  const unread = messagingEnabled ? Number(unreadRaw ?? 0) : 0;
+
+  const logout = () => {
+    try {
+      (window as any).logout?.();
+    } catch {}
+    try {
+      window.dispatchEvent(new CustomEvent("smp:logout"));
+    } catch {}
+    // Fallback: open account menu from Navbar handles actual signout;
+    // In-app signout is typically handled there.
+    navigate("/");
+  };
+
+  const sidebarItems: Item[] = useMemo(() => {
+    const common: Item[] = [
+      { key: "dashboard", label: "Overview", to: "/dashboard", icon: LayoutDashboard, show: !!user },
+      {
+        key: "messages",
+        label: "Messages",
+        to: "/inbox",
+        icon: MessageSquare,
+        show: !!user && messagingEnabled,
+        badge: unread,
+      },
+      { key: "saved", label: "Saved Items", to: "/saved", icon: Heart, show: !!user },
+      { key: "notifications", label: "Notifications", to: "/notifications", icon: Bell, show: !!user },
+      { key: "profile", label: "Profile", to: "/profile", icon: User2, show: !!user },
+      { key: "settings", label: "Settings", to: "/settings", icon: Wrench, show: !!user },
+      { key: "help", label: "Help & Support", to: "/help", icon: HelpCircle, show: true },
+    ];
+
+    const seller: Item[] = [
+      { key: "myshop", label: "My Shop", to: "/my-shop", icon: Store, show: !!user && isSeller },
+      { key: "analytics", label: "Analytics", to: "/analytics", icon: BarChart3, show: !!user && isSeller },
+      { key: "reports", label: "Reports", to: "/reports", icon: FileText, show: !!user && isSeller },
+      {
+        key: "sellerSetup",
+        label: "Seller Profile",
+        to: "/seller/setup",
+        icon: User2,
+        show: !!user && isSeller,
+      },
+    ];
+
+    const toggles: Item[] = [
+      { key: "deals", label: "Deals", to: "/deals", icon: Tag, show: !!user && dealsEnabled },
+      {
+        key: "season",
+        label: dealsPostingEnabled ? String((FF as any)?.deals_posting_enabled?.description || "Season") : "Season",
+        to: "/deals",
+        icon: Tag,
+        show: !!user && dealsEnabled && dealsPostingEnabled,
+      },
+      { key: "delivery", label: "Delivery", to: "/delivery", icon: Truck, show: !!user && deliveryEnabled },
+    ];
+
+    const admin: Item[] = [{ key: "admin", label: "Admin", to: "/admin", icon: Wrench, show: !!user && isAdmin }];
+
+    const actions: Item[] = [{ key: "logout", label: "Log out", onClick: logout, icon: LogOut, show: !!user }];
+
+    return [...common, ...seller, ...toggles, ...admin, ...actions].filter((x) => x.show !== false);
+  }, [
+    user,
+    isSeller,
+    isAdmin,
+    messagingEnabled,
+    unread,
+    dealsEnabled,
+    dealsPostingEnabled,
+    deliveryEnabled,
+    FF,
+  ]);
+
+  // ✅ Seller sidebar sections (seller account only)
+  const sellerSections = useMemo(() => {
+    if (!user || !isSeller) return [] as Array<{ key: string; label: string; items: Item[] }>;
+
+    const main: Item[] = [
+      { key: "dashboard", label: "Dashboard", to: "/dashboard", icon: LayoutDashboard, show: !!user },
+      { key: "myListings", label: "My Listings", to: "/my-shop", icon: Store, show: !!user },
+      { key: "saved", label: "Saved Items", to: "/saved", icon: Heart, show: !!user },
+    ];
+
+    const communication: Item[] = [
+      {
+        key: "messages",
+        label: "Messages",
+        to: "/inbox",
+        icon: MessageSquare,
+        show: !!user && messagingEnabled,
+        badge: unread,
+      },
+      { key: "notifications", label: "Notifications", to: "/notifications", icon: Bell, show: !!user },
+    ];
+
+    const sellerTools: Item[] = [
+      { key: "sellerSetup", label: "Seller Setup", to: "/seller/setup", icon: User2, show: !!user && isSeller },
+      { key: "analytics", label: "Analytics", to: "/analytics", icon: BarChart3, show: !!user && isSeller },
+      { key: "reports", label: "Reports", to: "/reports", icon: FileText, show: !!user && isSeller },
+    ];
+
+    const system: Item[] = [
+      { key: "myProfile", label: "My Profile", to: "/profile", icon: User2, show: !!user },
+      { key: "settings", label: "Settings", to: "/settings", icon: Wrench, show: !!user },
+      { key: "help", label: "Help & Support", to: "/help", icon: HelpCircle, show: true },
+      ];
+
+    const logoutSection: Item[] = [{ key: "logout", label: "Log out", onClick: logout, icon: LogOut, show: !!user }];
+
+    const sections = [
+      { key: "main", label: "MAIN", items: main },
+      { key: "communication", label: "COMMUNICATION", items: communication },
+      { key: "sellerTools", label: "SELLER TOOLS", items: sellerTools },
+      { key: "system", label: "SYSTEM", items: system },
+      { key: "logout", label: "LOGOUT", items: logoutSection },
+    ]
+      .map((sec) => ({ ...sec, items: sec.items.filter((x) => x.show !== false) }))
+      .filter((sec) => sec.items.length > 0);
+
+    return sections;
+  }, [user, isSeller, messagingEnabled, unread, logout]);
+
+  const showSellerMenu = isSeller && sellerSections.length > 0;
+  const buyerSections = sidebarItems;
+
+  const bottomTabs: Item[] = useMemo(() => {
+    return [
+      { key: "tab_dashboard", label: "Overview", to: "/dashboard", icon: LayoutDashboard, show: !!user },
+      {
+        key: "tab_messages",
+        label: "Messages",
+        to: "/inbox",
+        icon: MessageSquare,
+        show: !!user && messagingEnabled,
+        badge: unread,
+      },
+      { key: "tab_saved", label: "Saved", to: "/saved", icon: Heart, show: !!user },
+      { key: "tab_notifs", label: "Alerts", to: "/notifications", icon: Bell, show: !!user },
+      { key: "tab_profile", label: "Profile", to: "/profile", icon: User2, show: !!user },
+    ].filter((x) => x.show !== false);
+  }, [user, messagingEnabled, unread]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [path]);
+
+  const goBack = () => {
+    // If history is available, go back; else go dashboard
+    try {
+      if (window.history.length > 1) window.history.back();
+      else navigate("/dashboard");
+    } catch {
+      navigate("/dashboard");
+    }
+  };
+
+  return (
+    <div className="min-h-[calc(100vh-56px)] bg-slate-50">
+      {/* Mobile header */}
+      <div className="md:hidden sticky top-0 z-40 bg-white/90 backdrop-blur border-b border-slate-100">
+        <div className="h-12 px-3 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={goBack}
+            className="inline-flex items-center justify-center w-10 h-10 rounded-xl hover:bg-slate-50"
+            aria-label="Back"
+          >
+            <ArrowLeft className="w-5 h-5 text-slate-800" />
+          </button>
+
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-black text-slate-900 truncate">{title}</div>
+          </div>
+
+          <div className="flex items-center gap-1">
+            {messagingEnabled && (
+              <button
+                type="button"
+                onClick={() => navigate("/inbox")}
+                className="relative inline-flex items-center justify-center w-10 h-10 rounded-xl hover:bg-slate-50"
+                aria-label="Messages"
+                title="Messages"
+              >
+                <MessageSquare className="w-5 h-5 text-slate-800" />
+                {unread > 0 ? (
+                  <span className="absolute -top-0.5 -right-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                    {unread}
+                  </span>
+                ) : null}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setMobileOpen((v) => !v)}
+              className="inline-flex items-center justify-center w-10 h-10 rounded-xl hover:bg-slate-50"
+              aria-label="Menu"
+            >
+              {mobileOpen ? <X className="w-5 h-5 text-slate-800" /> : <Menu className="w-5 h-5 text-slate-800" />}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile drawer */}
+        {mobileOpen && (
+          <div className="px-3 pb-3">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="p-2 grid gap-1">
+                                {showSellerMenu && (
+                  <div className="grid gap-3">
+                    {sellerSections.map((sec) => (
+                      <div key={sec.key}>
+                        <div className="px-3 pt-2 pb-1 text-[11px] font-black tracking-wide text-slate-500">
+                          {sec.label}
+                        </div>
+                        <div className="grid gap-1">
+                          {sec.items.map((it) => {
+                            const Icon = it.icon;
+                            const active = it.to ? path === it.to : false;
+                
+                            return (
+                              <button
+                                key={it.key}
+                                type="button"
+                                onClick={() => {
+                                                  setMobileOpen(false);
+                                                  if (it.onClick) return it.onClick();
+                                                  if (it.to) return navigate(it.to);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                                  active ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                                )}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Icon className="w-4 h-4" />
+                                  <span>{it.label}</span>
+                                </div>
+                
+                                <div className="flex items-center gap-2">
+                                  {it.badge && it.badge > 0 ? (
+                                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                                      {it.badge}
+                                    </span>
+                                  ) : null}
+                                  <ChevronRight className="w-4 h-4 opacity-60" />
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {buyerSections.map((it) => {
+                  const Icon = it.icon;
+                  const active = it.to ? path === it.to : false;
+
+                  return (
+                    <button
+                      key={it.key}
+                      type="button"
+                      onClick={() => {
+                        setMobileOpen(false);
+                        if (it.onClick) return it.onClick();
+                        if (it.to) return navigate(it.to);
+                      }}
+                      className={cn(
+                        "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                        active ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        <span>{it.label}</span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {it.badge && it.badge > 0 ? (
+                          <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                            {it.badge}
+                          </span>
+                        ) : null}
+                        <ChevronRight className="w-4 h-4 opacity-60" />
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop layout */}
+      <div className="max-w-6xl mx-auto px-3 sm:px-4 py-4">
+        <div className="flex gap-4">
+          {/* Desktop sidebar */}
+          <aside className="hidden md:block w-72 shrink-0">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-3 sticky top-20">
+              <div className="px-2 py-2">
+                <div className="text-xs font-black text-slate-500">ACCOUNT</div>
+                <div className="text-lg font-black text-slate-900">{title}</div>
+              </div>
+
+              <div className="mt-2 grid gap-1">
+                                {showSellerMenu && (
+                  <div className="grid gap-3">
+                    {sellerSections.map((sec) => (
+                      <div key={sec.key}>
+                        <div className="px-3 pt-2 pb-1 text-[11px] font-black tracking-wide text-slate-500">
+                          {sec.label}
+                        </div>
+                        <div className="grid gap-1">
+                          {sec.items.map((it) => {
+                            const Icon = it.icon;
+                            const active = it.to ? path === it.to : false;
+                
+                            return (
+                              <button
+                                key={it.key}
+                                type="button"
+                                onClick={() => {
+                                                  if (it.onClick) return it.onClick();
+                                                  if (it.to) return navigate(it.to);
+                                }}
+                                className={cn(
+                                  "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                                  active ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                                )}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Icon className="w-4 h-4" />
+                                  <span>{it.label}</span>
+                                </div>
+                
+                                <div className="flex items-center gap-2">
+                                  {it.badge && it.badge > 0 ? (
+                                    <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                                      {it.badge}
+                                    </span>
+                                  ) : null}
+                                  <ChevronRight className="w-4 h-4 opacity-60" />
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {buyerSections.map((it) => {
+                  const Icon = it.icon;
+                  const active = it.to ? path === it.to : false;
+
+                  return (
+                    <button
+                      key={it.key}
+                      type="button"
+                      onClick={() => {
+                        if (it.onClick) return it.onClick();
+                        if (it.to) return navigate(it.to);
+                      }}
+                      className={cn(
+                        "w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-between",
+                        active ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="w-4 h-4" />
+                        <span>{it.label}</span>
+                      </div>
+
+                      {it.badge && it.badge > 0 ? (
+                        <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                          {it.badge}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </aside>
+
+          {/* Content */}
+          <main className="flex-1 min-w-0 pb-24 md:pb-0">{children}</main>
+        </div>
+      </div>
+
+      {/* Mobile bottom tabs */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200">
+        <div className="max-w-6xl mx-auto px-2">
+          <div className="h-16 grid" style={{ gridTemplateColumns: `repeat(${bottomTabs.length}, minmax(0, 1fr))` }}>
+            {bottomTabs.map((it) => {
+              const Icon = it.icon;
+              const active = it.to ? path === it.to : false;
+
+              return (
+                <button
+                  key={it.key}
+                  type="button"
+                  onClick={() => it.to && navigate(it.to)}
+                  className={cn(
+                    "relative flex flex-col items-center justify-center gap-1 rounded-xl my-2",
+                    active ? "text-brand" : "text-slate-700"
+                  )}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span className="text-[10px] font-bold">{it.label}</span>
+
+                  {it.badge && it.badge > 0 ? (
+                    <span className="absolute top-1 right-3 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black">
+                      {it.badge}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

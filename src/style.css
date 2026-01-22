@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+/* Global UI baseline (Phase 1 polish) */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+}

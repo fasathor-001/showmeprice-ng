@@ -1,0 +1,21 @@
+﻿@import "tailwindcss";
+
+/* Tailwind v4: tell Tailwind what files to scan for class names */
+@source "../index.html";
+@source "./**/*.{ts,tsx,js,jsx,html}";
+
+/* Project theme tokens (enables bg-brand / text-brand, etc.) */
+@theme {
+  --color-brand: #0F766E; /* teal-500 vibe */
+}
+@layer utilities {
+  .animate-view {
+    animation: smp-fade-in 160ms ease-out;
+  }
+  @keyframes smp-fade-in {
+    from { opacity: 0; transform: translateY(2px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+}
+
+

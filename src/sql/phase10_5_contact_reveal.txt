@@ -1,0 +1,49 @@
+
+-- ============================================================================
+-- PHASE 10.5: SECURE CONTACT REVEAL RPC
+-- Run this in Supabase SQL Editor
+-- ============================================================================
+
+BEGIN;
+
+-- Create Secure RPC to fetch contact info
+-- Only returns data if the *Caller* has a Premium Membership
+CREATE OR REPLACE FUNCTION public.get_seller_contact(p_business_id UUID)
+RETURNS TABLE (phone_number TEXT, whatsapp_number TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_tier TEXT;
+    v_caller_id UUID := auth.uid();
+BEGIN
+    -- 1. Check Authentication
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    -- 2. Check Caller's Membership Tier
+    SELECT membership_tier INTO v_tier
+    FROM public.users
+    WHERE id = v_caller_id;
+
+    -- 3. Enforce Premium Gate
+    -- Allowed tiers: 'pro', 'business'. Block 'free' or null.
+    IF v_tier IS NULL OR v_tier = 'free' THEN
+        RAISE EXCEPTION 'Premium membership required to access contact details.';
+    END IF;
+
+    -- 4. Return Contact Data
+    -- We fetch the business WhatsApp and the owner's phone number (from users table)
+    RETURN QUERY
+    SELECT 
+        u.phone_number,
+        b.whatsapp_number
+    FROM public.businesses b
+    JOIN public.users u ON u.id = b.user_id
+    WHERE b.id = p_business_id;
+END;
+$$;
+
+COMMIT;

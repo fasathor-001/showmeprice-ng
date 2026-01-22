@@ -1,0 +1,123 @@
+
+-- ============================================================================
+-- PHASE 4 MIGRATION: FEATURE FLAGS & AUDIT
+-- Run this in Supabase SQL Editor
+-- ============================================================================
+
+BEGIN;
+
+-- 1. Create Feature Flags Table
+CREATE TABLE IF NOT EXISTS public.feature_flags (
+    key TEXT PRIMARY KEY,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    description TEXT,
+    visible_to TEXT NOT NULL DEFAULT 'all', -- 'all', 'authenticated', 'premium', 'admin'
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Create Audit Log Table
+CREATE TABLE IF NOT EXISTS public.feature_flag_audit (
+    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    flag_key TEXT REFERENCES public.feature_flags(key) ON DELETE CASCADE,
+    changed_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    from_enabled BOOLEAN,
+    to_enabled BOOLEAN,
+    note TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. Enable RLS
+ALTER TABLE public.feature_flags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.feature_flag_audit ENABLE ROW LEVEL SECURITY;
+
+-- 4. RLS Policies
+
+-- Feature Flags: Everyone can read
+DROP POLICY IF EXISTS "Public Read Feature Flags" ON public.feature_flags;
+CREATE POLICY "Public Read Feature Flags"
+ON public.feature_flags FOR SELECT
+USING (true);
+
+-- Feature Flags: Only Admins can update
+DROP POLICY IF EXISTS "Admins Manage Feature Flags" ON public.feature_flags;
+CREATE POLICY "Admins Manage Feature Flags"
+ON public.feature_flags FOR ALL
+USING (
+  EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid() AND role = 'admin'
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid() AND role = 'admin'
+  )
+);
+
+-- Audit Logs: Only Admins can read
+DROP POLICY IF EXISTS "Admins Read Audit Logs" ON public.feature_flag_audit;
+CREATE POLICY "Admins Read Audit Logs"
+ON public.feature_flag_audit FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid() AND role = 'admin'
+  )
+);
+
+-- Audit Logs: Only Admins can insert
+DROP POLICY IF EXISTS "Admins Insert Audit Logs" ON public.feature_flag_audit;
+CREATE POLICY "Admins Insert Audit Logs"
+ON public.feature_flag_audit FOR INSERT
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = auth.uid() AND role = 'admin'
+  )
+);
+
+-- 5. Trigger for updated_at
+CREATE OR REPLACE FUNCTION public.update_timestamp()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS update_feature_flags_mod ON public.feature_flags;
+CREATE TRIGGER update_feature_flags_mod
+BEFORE UPDATE ON public.feature_flags
+FOR EACH ROW EXECUTE PROCEDURE public.update_timestamp();
+
+-- 6. Seed Initial Flags
+INSERT INTO public.feature_flags (key, enabled, description, visible_to)
+VALUES
+    ('escrow_enabled', FALSE, 'Enable Escrow payment services', 'all'),
+    ('institution_tools_enabled', FALSE, 'Enable RFQ and Procurement tools for Institutions', 'all'),
+    ('phone_call_enabled', FALSE, 'Allow Premium users to see Phone Numbers', 'premium'),
+    ('whatsapp_contact_enabled', FALSE, 'Allow Premium users to see WhatsApp links', 'premium'),
+    ('chat_filtering_enabled', FALSE, 'Block phone numbers and links in chat for Free users', 'admin'),
+    ('in_app_messaging_enabled', TRUE, 'Core messaging functionality', 'all')
+ON CONFLICT (key) DO UPDATE
+SET description = EXCLUDED.description;
+
+-- 7. Safety Trigger: Prevent disabling in_app_messaging
+CREATE OR REPLACE FUNCTION public.prevent_core_feature_disable()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.key = 'in_app_messaging_enabled' AND NEW.enabled = FALSE THEN
+        RAISE EXCEPTION 'Cannot disable core feature: in_app_messaging_enabled';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS protect_core_features ON public.feature_flags;
+CREATE TRIGGER protect_core_features
+BEFORE UPDATE ON public.feature_flags
+FOR EACH ROW EXECUTE PROCEDURE public.prevent_core_feature_disable();
+
+COMMIT;

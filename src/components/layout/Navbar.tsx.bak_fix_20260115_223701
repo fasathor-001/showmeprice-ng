@@ -1,0 +1,649 @@
+// src/components/layout/Navbar.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { supabase } from "../../lib/supabase";
+import { useProfile } from "../../hooks/useProfile";
+import { useFF } from "../../hooks/useFF";
+import { useUnreadMessagesCount } from "../../hooks/useUnreadMessagesCount";
+import type { User } from "@supabase/supabase-js";
+
+type NavItem = {
+  label: string;
+  path: string;
+  show?: boolean;
+};
+
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
+function navigateToPath(path: string) {
+  try {
+    if (window.location.pathname !== path) window.history.pushState({}, "", path);
+    window.dispatchEvent(new Event("popstate"));
+    window.dispatchEvent(new Event("smp:navigate"));
+  } catch {
+    window.location.href = path;
+  }
+}
+
+function useCurrentPath() {
+  const [path, setPath] = useState<string>(() => window.location.pathname || "/");
+  useEffect(() => {
+    const onChange = () => setPath(window.location.pathname || "/");
+    window.addEventListener("popstate", onChange);
+    window.addEventListener("smp:navigate", onChange as any);
+    return () => {
+      window.removeEventListener("popstate", onChange);
+      window.removeEventListener("smp:navigate", onChange as any);
+    };
+  }, []);
+  return path;
+}
+
+function Icon({
+  name,
+  className = "w-4 h-4",
+}: {
+  name:
+    | "menu"
+    | "x"
+    | "tag"
+    | "truck"
+    | "grid"
+    | "mail"
+    | "user"
+    | "shield"
+    | "dash"
+    | "settings"
+    | "store"
+    | "logout";
+  className?: string;
+}) {
+  const common = {
+    className,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  switch (name) {
+    case "menu":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 6h16" />
+          <path d="M4 12h16" />
+          <path d="M4 18h16" />
+        </svg>
+      );
+    case "x":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M18 6 6 18" />
+          <path d="M6 6l12 12" />
+        </svg>
+      );
+    case "grid":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 3h8v8H3z" />
+          <path d="M13 3h8v8h-8z" />
+          <path d="M3 13h8v8H3z" />
+          <path d="M13 13h8v8h-8z" />
+        </svg>
+      );
+    case "tag":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20.6 13.2 13.2 20.6a2 2 0 0 1-2.8 0L3 13.2V3h10.2l7.4 7.4a2 2 0 0 1 0 2.8z" />
+          <path d="M7.5 7.5h.01" />
+        </svg>
+      );
+    case "truck":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 17h4V5H2v12h2" />
+          <path d="M14 8h5l3 3v6h-2" />
+          <path d="M6 17a2 2 0 1 0 4 0" />
+          <path d="M16 17a2 2 0 1 0 4 0" />
+        </svg>
+      );
+    case "mail":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 4h16v16H4z" />
+          <path d="m4 7 8 6 8-6" />
+        </svg>
+      );
+    case "user":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 21a8 8 0 1 0-16 0" />
+          <path d="M12 13a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
+        </svg>
+      );
+    case "shield":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 2 20 6v6c0 5-3.5 9.5-8 10-4.5-.5-8-5-8-10V6z" />
+        </svg>
+      );
+    case "dash":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 13h6V4H4z" />
+          <path d="M14 20h6V11h-6z" />
+          <path d="M14 4h6v5h-6z" />
+          <path d="M4 20h6v-5H4z" />
+        </svg>
+      );
+    case "settings":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z" />
+          <path d="M19.4 15a7.8 7.8 0 0 0 .1-2l2-1.5-2-3.5-2.4 1a7.7 7.7 0 0 0-1.7-1l-.4-2.6H11l-.4 2.6a7.7 7.7 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7.8 7.8 0 0 0 .1 2l-2 1.5 2 3.5 2.4-1a7.7 7.7 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.7 7.7 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5z" />
+        </svg>
+      );
+    case "store":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 7l1-4h16l1 4" />
+          <path d="M5 7v14h14V7" />
+          <path d="M9 21V12h6v9" />
+        </svg>
+      );
+    case "logout":
+      return (
+        <svg {...common} viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10 17l1 4h8a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-8l-1 4" />
+          <path d="M15 12H3" />
+          <path d="M6 9l-3 3 3 3" />
+        </svg>
+      );
+  }
+}
+
+export function BrandLogo({ className = "w-9 h-9" }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        className,
+        "rounded-full bg-emerald-600 flex items-center justify-center font-black text-white select-none"
+      )}
+      aria-label="ShowMePrice.ng"
+      title="ShowMePrice.ng"
+    >
+      SMP
+    </div>
+  );
+}
+
+function openAuth(mode: "login" | "register") {
+  const openLogin = () => (window as any).openAuthModal?.();
+  const openRegister = () => (window as any).openRegisterModal?.();
+
+  if (mode === "login" && typeof openLogin === "function") return openLogin();
+  if (mode === "register" && typeof openRegister === "function") return openRegister();
+
+  try {
+    window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode } }));
+  } catch {}
+
+  if (window.location.pathname !== "/") navigateToPath("/");
+}
+
+export default function Navbar() {
+  const ff = useFF() as any;
+  const { profile } = useProfile() as any;
+  const path = useCurrentPath();
+
+  // ✅ Source of truth for signed-in state
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (!alive) return;
+      setAuthUser(data.session?.user ?? null);
+    })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!alive) return;
+      setAuthUser(session?.user ?? null);
+    });
+
+    return () => {
+      alive = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  const signedIn = !!authUser;
+
+  const role = String((profile as any)?.role ?? "user").toLowerCase();
+  const userType = String((profile as any)?.user_type ?? "buyer").toLowerCase();
+
+  const isAdmin = signedIn && role === "admin";
+  const isSeller = signedIn && userType === "seller";
+
+  const deliveryEnabled = !!ff?.delivery;
+  const dealsEnabled = !!ff?.deals;
+  const inAppMessagingEnabled = !!ff?.messaging;
+
+  const unreadRaw = useUnreadMessagesCount(15000);
+  const unread = inAppMessagingEnabled ? Number(unreadRaw ?? 0) : 0;
+
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // ✅ NEW: Desktop account dropdown state
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    // close menus on route change
+    setMobileOpen(false);
+    setAccountOpen(false);
+  }, [path]);
+
+  useEffect(() => {
+    if (!accountOpen) return;
+
+    const onMouseDown = (e: MouseEvent) => {
+      const el = accountMenuRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) setAccountOpen(false);
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAccountOpen(false);
+    };
+
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [accountOpen]);
+
+  const topItems: NavItem[] = useMemo(() => {
+    if (!signedIn) return [];
+    return [
+      { label: "Marketplace", path: "/categories", show: true },
+      { label: "Deals", path: "/deals", show: dealsEnabled },
+      { label: "Delivery", path: "/delivery", show: deliveryEnabled },
+    ].filter((x) => x.show);
+  }, [signedIn, dealsEnabled, deliveryEnabled]);
+
+  const go = (p: string) => () => navigateToPath(p);
+
+  const openInbox = () => {
+    setMobileOpen(false);
+    setAccountOpen(false);
+    navigateToPath("/inbox");
+    try {
+      window.dispatchEvent(new CustomEvent("smp:view-inbox", { detail: undefined }));
+    } catch {
+      window.dispatchEvent(new Event("smp:view-inbox"));
+    }
+  };
+
+  async function handleSignOut() {
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      setMobileOpen(false);
+      setAccountOpen(false);
+      navigateToPath("/");
+    }
+  }
+
+  const activeClass = (p: string) =>
+    cn(
+      "text-sm font-semibold px-3 py-2 rounded-lg",
+      path === p ? "text-brand bg-slate-50" : "text-slate-700 hover:text-brand hover:bg-slate-50"
+    );
+
+  const displayName = String(
+    (profile as any)?.full_name || (profile as any)?.display_name || "Account"
+  ).trim();
+  const emailFallback = String(authUser?.email ?? "").trim();
+  const avatarLetter = (displayName || emailFallback || "U").slice(0, 1).toUpperCase();
+
+  return (
+    <nav className="sticky top-0 z-50 bg-white/85 backdrop-blur border-b border-slate-100">
+      <div className="max-w-6xl mx-auto px-3 sm:px-4">
+        <div className="h-14 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={go("/")}
+            className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-slate-50"
+            aria-label="Go to Home"
+          >
+            <BrandLogo className="w-9 h-9" />
+            <span className="text-xl sm:text-2xl font-black text-slate-900 leading-none">
+              ShowMePrice<span className="text-brand">.ng</span>
+            </span>
+          </button>
+
+          {signedIn && (
+            <div className="hidden md:flex items-center gap-1">
+              {topItems.map((it) => (
+                <button key={it.path} type="button" onClick={go(it.path)} className={activeClass(it.path)}>
+                  {it.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            {!signedIn ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openAuth("login")}
+                  className="text-sm font-semibold px-3 py-2 rounded-lg text-slate-700 hover:text-brand hover:bg-slate-50"
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openAuth("register")}
+                  className="text-sm font-extrabold px-3 py-2 rounded-lg bg-brand text-white hover:opacity-95"
+                >
+                  Sell / Register
+                </button>
+              </div>
+            ) : (
+              <>
+                {/* Inbox icon */}
+                {inAppMessagingEnabled && (
+                  <button
+                    type="button"
+                    onClick={openInbox}
+                    className="relative inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-50 text-slate-800"
+                    aria-label="Inbox"
+                    title="Inbox"
+                  >
+                    <Icon name="mail" className="w-5 h-5" />
+                    {unread > 0 ? (
+                      <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                        {unread > 99 ? "99+" : unread}
+                      </span>
+                    ) : null}
+                  </button>
+                )}
+
+                {/* ✅ Desktop Account Dropdown */}
+                <div ref={accountMenuRef} className="relative hidden md:block">
+                  <button
+                    type="button"
+                    onClick={() => setAccountOpen((v) => !v)}
+                    className="inline-flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-50"
+                    aria-label="Account menu"
+                    title="Account"
+                  >
+                    <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-extrabold">
+                      {avatarLetter}
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm font-extrabold text-slate-900">{displayName || "Account"}</div>
+                      <div className="text-[11px] text-slate-500 -mt-0.5">
+                        {isAdmin ? "Admin" : isSeller ? "Seller" : "Buyer"}
+                      </div>
+                    </div>
+                  </button>
+
+                  {accountOpen && (
+                    <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-lg p-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountOpen(false);
+                          navigateToPath("/dashboard");
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                      >
+                        <Icon name="dash" />
+                        Dashboard
+                      </button>
+
+                      {isSeller && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAccountOpen(false);
+                            navigateToPath("/my-shop");
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          <Icon name="store" />
+                          My Shop
+                        </button>
+                      )}
+
+                      {inAppMessagingEnabled && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAccountOpen(false);
+                            openInbox();
+                          }}
+                          className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Icon name="mail" />
+                            Messages
+                          </span>
+                          {unread > 0 ? (
+                            <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black inline-flex items-center justify-center">
+                              {unread > 99 ? "99+" : unread}
+                            </span>
+                          ) : null}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountOpen(false);
+                          navigateToPath("/profile");
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                      >
+                        <Icon name="user" />
+                        Profile
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAccountOpen(false);
+                          navigateToPath("/settings");
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                      >
+                        <Icon name="settings" />
+                        Settings
+                      </button>
+
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAccountOpen(false);
+                            navigateToPath("/admin");
+                          }}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                        >
+                          <Icon name="shield" />
+                          Admin
+                        </button>
+                      )}
+
+                      <div className="my-1 border-t border-slate-100" />
+
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50"
+                      >
+                        <Icon name="logout" />
+                        Sign Out
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Mobile: keep simple account tap to dashboard */}
+                <button
+                  type="button"
+                  onClick={() => navigateToPath("/dashboard")}
+                  className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-50 text-slate-800"
+                  aria-label="Account"
+                  title="Account"
+                >
+                  <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-extrabold">
+                    {avatarLetter}
+                  </div>
+                </button>
+              </>
+            )}
+
+            {signedIn && (
+              <button
+                type="button"
+                onClick={() => setMobileOpen((v) => !v)}
+                className="md:hidden inline-flex items-center justify-center w-10 h-10 rounded-lg hover:bg-slate-50 text-slate-800"
+                aria-label="Menu"
+              >
+                {mobileOpen ? <Icon name="x" className="w-5 h-5" /> : <Icon name="menu" className="w-5 h-5" />}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile menu (unchanged) */}
+        {signedIn && mobileOpen && (
+          <div className="md:hidden pb-3">
+            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+              <div className="p-2 grid gap-1">
+                <button
+                  type="button"
+                  onClick={() => navigateToPath("/dashboard")}
+                  className={cn(
+                    "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                    path === "/dashboard" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                  )}
+                >
+                  <span>Dashboard</span>
+                  <Icon name="dash" />
+                </button>
+
+                {topItems.map((it) => (
+                  <button
+                    key={it.path}
+                    type="button"
+                    onClick={() => navigateToPath(it.path)}
+                    className={cn(
+                      "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                      path === it.path ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                    )}
+                  >
+                    <span>{it.label}</span>
+                    {it.path === "/deals" && <Icon name="tag" />}
+                    {it.path === "/delivery" && <Icon name="truck" />}
+                    {it.path === "/categories" && <Icon name="grid" />}
+                  </button>
+                ))}
+
+                {inAppMessagingEnabled && (
+                  <button
+                    type="button"
+                    onClick={openInbox}
+                    className={cn(
+                      "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                      path === "/inbox" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span>Messages</span>
+                      {unread > 0 ? (
+                        <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-black">
+                          {unread > 99 ? "99+" : unread}
+                        </span>
+                      ) : null}
+                    </div>
+                    <Icon name="mail" />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => navigateToPath("/profile")}
+                  className={cn(
+                    "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                    path === "/profile" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                  )}
+                >
+                  <span>Profile</span>
+                  <Icon name="user" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => navigateToPath("/settings")}
+                  className={cn(
+                    "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                    path === "/settings" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                  )}
+                >
+                  <span>Settings</span>
+                  <Icon name="settings" />
+                </button>
+
+                {isSeller && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToPath("/my-shop")}
+                    className={cn(
+                      "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                      path === "/my-shop" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                    )}
+                  >
+                    <span>My Shop</span>
+                    <Icon name="store" />
+                  </button>
+                )}
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => navigateToPath("/admin")}
+                    className={cn(
+                      "w-full text-left px-3 py-3 rounded-xl text-sm font-semibold flex items-center justify-between",
+                      path === "/admin" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
+                    )}
+                  >
+                    <span>Admin</span>
+                    <Icon name="shield" />
+                  </button>
+                )}
+
+                <div className="border-t border-slate-100" />
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  className="w-full text-left px-4 py-3 text-sm text-red-600 hover:bg-red-50 rounded-xl"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </nav>
+  );
+}

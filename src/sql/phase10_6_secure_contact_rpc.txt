@@ -1,0 +1,70 @@
+
+-- ============================================================================
+-- PHASE 10.6: SECURE CONTACT REVEAL (PRODUCT ID + FEATURE FLAGS)
+-- Run this in Supabase SQL Editor
+-- ============================================================================
+
+BEGIN;
+
+-- Drop previous version if it exists to avoid signature conflicts
+DROP FUNCTION IF EXISTS public.get_seller_contact(UUID);
+
+-- Create Secure RPC
+-- Logic: Product -> Business -> User
+-- Gates: Auth + Premium Tier + Feature Flags
+CREATE OR REPLACE FUNCTION public.get_seller_contact(p_product_id UUID)
+RETURNS TABLE (phone_number TEXT, whatsapp_number TEXT)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_caller_id UUID := auth.uid();
+    v_tier TEXT;
+    v_phone_enabled BOOLEAN;
+    v_wa_enabled BOOLEAN;
+BEGIN
+    -- 1. Check Authentication
+    IF v_caller_id IS NULL THEN
+        RAISE EXCEPTION 'Not authenticated';
+    END IF;
+
+    -- 2. Check Caller's Membership Tier (Source of Truth: public.users)
+    SELECT membership_tier INTO v_tier
+    FROM public.users
+    WHERE id = v_caller_id;
+
+    -- Enforce Premium Gate (Allow 'business' or 'pro')
+    IF v_tier IS NULL OR (v_tier != 'business' AND v_tier != 'pro') THEN
+        RAISE EXCEPTION 'Premium membership required to access contact details.';
+    END IF;
+
+    -- 3. Check Feature Flags (Dynamic System Control)
+    SELECT enabled INTO v_phone_enabled 
+    FROM public.feature_flags 
+    WHERE key = 'phone_call_enabled';
+
+    SELECT enabled INTO v_wa_enabled 
+    FROM public.feature_flags 
+    WHERE key = 'whatsapp_contact_enabled';
+
+    -- 4. Return Contact Data safely
+    -- Returns NULL for a field if its specific feature flag is disabled
+    RETURN QUERY
+    SELECT 
+        CASE 
+            WHEN COALESCE(v_phone_enabled, false) THEN u.phone_number 
+            ELSE NULL 
+        END as phone_number,
+        CASE 
+            WHEN COALESCE(v_wa_enabled, false) THEN b.whatsapp_number 
+            ELSE NULL 
+        END as whatsapp_number
+    FROM public.products p
+    JOIN public.businesses b ON b.id = p.business_id
+    JOIN public.users u ON u.id = b.user_id
+    WHERE p.id = p_product_id;
+END;
+$$;
+
+COMMIT;
