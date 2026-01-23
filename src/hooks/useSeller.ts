@@ -26,11 +26,25 @@ export function useSeller() {
       try {
         // IMPORTANT FIX:
         // businesses uses user_id, whatsapp_number, phone_number
-        const { data, error } = await supabase
+        let data: any = null;
+        let error: any = null;
+        const byUser = await supabase
           .from("businesses")
-          .select("*")
+          .select("*, verification_tier, verification_status")
           .eq("user_id", user.id)
           .maybeSingle();
+        data = byUser.data;
+        error = byUser.error;
+
+        if (!data && !error) {
+          const byOwner = await supabase
+            .from("businesses")
+            .select("*, verification_tier, verification_status")
+            .eq("owner_id", user.id)
+            .maybeSingle();
+          data = byOwner.data;
+          error = byOwner.error;
+        }
 
         if (error) throw error;
 

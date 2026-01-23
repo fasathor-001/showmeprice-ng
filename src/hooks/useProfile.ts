@@ -189,11 +189,25 @@ export function useProfile() {
       if (profileType) setCachedUserType(userId, profileType);
 
       // 2) Seller business record (safe even for buyers; will be null)
-      const { data: bizRow, error: bErr } = await supabase
+      let bizRow: any = null;
+      let bErr: any = null;
+      const { data: byUserId, error: byUserErr } = await supabase
         .from("businesses")
         .select("*")
         .eq("user_id", userId)
         .maybeSingle();
+      bizRow = byUserId;
+      bErr = byUserErr;
+
+      if (!bizRow && !bErr) {
+        const { data: byOwnerId, error: byOwnerErr } = await supabase
+          .from("businesses")
+          .select("*")
+          .eq("owner_id", userId)
+          .maybeSingle();
+        bizRow = byOwnerId;
+        bErr = byOwnerErr;
+      }
 
       if (bErr) throw bErr;
 

@@ -191,7 +191,9 @@ export default function DashboardPage() {
 
   if (isSeller) {
     const b = business as any;
+    const tierRaw = safeStr(b?.verification_tier).toLowerCase();
     const verification =
+      (tierRaw === "verified" ? "verified" : "") ||
       safeStr(b?.verification_status) ||
       safeStr((profile as any)?.seller_verification_status) ||
       "unverified";
