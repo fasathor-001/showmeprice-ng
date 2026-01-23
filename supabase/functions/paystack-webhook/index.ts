@@ -1,153 +1,86 @@
-﻿import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-function jsonResponse(status: number, body: Record<string, unknown>) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+function toHex(buffer: ArrayBuffer) {
+  return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-async function hmacSha512Hex(secret: string, body: string) {
-  const encoder = new TextEncoder();
+async function hmacSha512Hex(secret: string, message: string) {
   const key = await crypto.subtle.importKey(
     "raw",
-    encoder.encode(secret),
+    new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-512" },
     false,
-    ["sign"]
+    ["sign"],
   );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
-  return Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(message));
+  return toHex(sig);
 }
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
+  if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
-  const serviceRoleKey =
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ??
-    Deno.env.get("SERVICE_ROLE_KEY") ??
-    "";
-  const paystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
+  const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!serviceRoleKey) {
-    return jsonResponse(500, { error: "SUPABASE_SERVICE_ROLE_KEY not set in Supabase secrets" });
-  }
-  if (!supabaseUrl) {
-    return jsonResponse(500, { error: "Supabase configuration missing." });
-  }
-  if (!paystackSecretKey) {
-    return jsonResponse(500, { error: "Paystack configuration missing." });
-  }
+  if (!secret || !supabaseUrl || !serviceKey) return new Response("Missing env", { status: 500 });
 
-  const signature = req.headers.get("x-paystack-signature") ?? "";
-  const bodyText = await req.text();
-  if (!signature) {
-    return jsonResponse(401, { error: "Missing signature" });
-  }
+  // MUST verify signature against RAW body
+  const rawBody = await req.text();
+  const receivedSig = req.headers.get("x-paystack-signature") ?? "";
+  const computedSig = await hmacSha512Hex(secret, rawBody);
 
-  const computed = await hmacSha512Hex(paystackSecretKey, bodyText);
-  if (computed !== signature) {
-    return jsonResponse(401, { error: "Invalid signature" });
-  }
+  if (computedSig !== receivedSig) return new Response("Invalid signature", { status: 401 });
 
-  let payload: any;
+  let evt: any;
   try {
-    payload = JSON.parse(bodyText);
+    evt = JSON.parse(rawBody);
   } catch {
-    return jsonResponse(400, { error: "Invalid payload" });
+    return new Response("Bad JSON", { status: 400 });
   }
 
-  const event = String(payload?.event ?? "");
+  const provider = "paystack";
+  const type = String(evt?.event ?? "");
+  const event_id = String(evt?.id ?? "");
+  const reference = String(evt?.data?.reference ?? "");
 
-  const data = payload?.data ?? {};
-  const reference = String(data?.reference ?? "").trim();
-  const metadata = data?.metadata ?? {};
-  const orderId = String(metadata?.order_id ?? "").trim();
-  const eventId = data?.id ? String(data.id) : "";
+  if (!type || !reference) return new Response("OK", { status: 200 });
 
-  if (!reference && !orderId && !eventId) {
-    console.log("paystack:webhook:missing_reference");
-    return jsonResponse(200, { ok: true });
-  }
+  const db = createClient(supabaseUrl, serviceKey);
 
-  if (event !== "charge.success") {
-    return jsonResponse(200, { ok: true });
-  }
+  // Resolve escrow order id (optional but useful)
+  const { data: order } = await db
+    .from("escrow_orders")
+    .select("id, status")
+    .eq("paystack_reference", reference)
+    .maybeSingle();
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
+  // Insert event; idempotency is enforced by unique index.
+  const ins = await db.from("escrow_events").insert({
+    provider,
+    type,
+    event_id,
+    reference,
+    escrow_order_id: order?.id ?? null,
+    payload: evt,
   });
 
-  const eventBase = {
-    provider: "paystack",
-    event_type: event,
-    event_id: eventId || null,
-    reference: reference || null,
-    order_id: orderId || null,
-    payload,
-  };
+  // If duplicate event => idempotent ACK
+  if (ins.error) return new Response("OK", { status: 200 });
 
-  let inserted = false;
-  if (eventId) {
-    const { data: rows, error } = await supabase
-      .from("escrow_events")
-      .insert(eventBase, { onConflict: "provider,event_type,event_id", ignoreDuplicates: true })
-      .select("id")
-      .limit(1);
-    if (error) {
-      return jsonResponse(500, { error: "Failed to log event" });
-    }
-    inserted = !!rows?.[0];
-  } else if (reference) {
-    const { data: rows, error } = await supabase
-      .from("escrow_events")
-      .insert(eventBase, { onConflict: "provider,event_type,reference", ignoreDuplicates: true })
-      .select("id")
-      .limit(1);
-    if (error) {
-      return jsonResponse(500, { error: "Failed to log event" });
-    }
-    inserted = !!rows?.[0];
-  } else {
-    return jsonResponse(200, { ok: true });
+  // Apply state transition only once
+  if (type === "charge.success" && order?.id) {
+    await db
+      .from("escrow_orders")
+      .update({
+        status: "funded",
+        funded: true,
+        paid_at: new Date().toISOString(),
+      })
+      .eq("id", order.id)
+      .in("status", ["initialized", "pending"]);
   }
 
-  if (!inserted) {
-    return jsonResponse(200, { ok: true });
-  }
-
-  let resolvedOrderId = orderId;
-  if (!resolvedOrderId && reference) {
-    const { data: orderRows } = await supabase
-      .from("escrow_transactions")
-      .select("id")
-      .eq("payment_reference", reference)
-      .limit(1);
-    resolvedOrderId = String(orderRows?.[0]?.id ?? "").trim();
-  }
-
-  const updates: Record<string, any> = {
-    status: "funded",
-  };
-  if (reference) updates.payment_reference = reference;
-
-  if (resolvedOrderId) {
-    await supabase.from("escrow_transactions").update(updates).eq("id", resolvedOrderId);
-  } else if (reference) {
-    await supabase.from("escrow_transactions").update(updates).eq("payment_reference", reference);
-  }
-
-  console.log("paystack:webhook:processed", { reference, orderId, event });
-  return jsonResponse(200, { ok: true });
+  return new Response("OK", { status: 200 });
 });
