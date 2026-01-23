@@ -28,11 +28,15 @@ serve(async (req) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const serviceRoleKey =
+    Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const paystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
   const siteUrl = Deno.env.get("SITE_URL") ?? "";
 
-  if (!supabaseUrl || !anonKey || !serviceRoleKey || !paystackSecretKey || !siteUrl) {
+  if (!serviceRoleKey) {
+    return jsonResponse(500, { error: "Missing SERVICE_ROLE_KEY secret" });
+  }
+  if (!supabaseUrl || !anonKey || !paystackSecretKey || !siteUrl) {
     return jsonResponse(500, { error: "Missing server configuration." });
   }
 
@@ -98,8 +102,9 @@ serve(async (req) => {
     return jsonResponse(403, { error: "Escrow requires minimum ₦50,000." });
   }
 
-  const feeKobo = Math.round(subtotalKobo * 0.015) + 10_000;
+  const feeKobo = Math.floor(subtotalKobo * 0.015) + 10_000;
   const totalKobo = subtotalKobo + feeKobo;
+  const nowIso = new Date().toISOString();
 
   const reference = `smp_${crypto.randomUUID().replace(/-/g, "")}`;
 
@@ -109,16 +114,33 @@ serve(async (req) => {
       buyer_id: buyer.id,
       seller_id: sellerId,
       product_id: productId,
+      currency: "NGN",
+      amount_kobo: totalKobo,
       subtotal_kobo: subtotalKobo,
+      escrow_fee_kobo: feeKobo,
       total_kobo: totalKobo,
       status: "initialized",
-      funded: false,
       paystack_reference: reference,
+      paystack_access_code: null,
+      paid_at: null,
+      product_snapshot: product,
+      updated_at: nowIso,
+      delivery_status: "pending",
+      dispute_status: "none",
+      settlement_status: "holding",
+      settlement_currency: "NGN",
     })
     .select("id")
     .single();
   if (orderErr || !orderRow?.id) {
-    return jsonResponse(500, { error: "Failed to create escrow order." });
+    if (orderErr) console.error("escrow-init:insert failed", orderErr);
+    return jsonResponse(500, {
+      error: "Failed to create escrow order.",
+      message: orderErr?.message ?? null,
+      details: (orderErr as any)?.details ?? null,
+      hint: (orderErr as any)?.hint ?? null,
+      code: (orderErr as any)?.code ?? null,
+    });
   }
 
   const initRes = await fetch("https://api.paystack.co/transaction/initialize", {
@@ -148,13 +170,13 @@ serve(async (req) => {
   const authorizationUrl = String(initJson.data.authorization_url ?? "").trim();
   const accessCode = String(initJson.data.access_code ?? "").trim();
 
-  if (authorizationUrl || accessCode) {
+  if (accessCode) {
     try {
       await supabaseAdmin
         .from("escrow_orders")
         .update({
-          authorization_url: authorizationUrl || null,
-          access_code: accessCode || null,
+          paystack_access_code: accessCode,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", orderRow.id);
     } catch {

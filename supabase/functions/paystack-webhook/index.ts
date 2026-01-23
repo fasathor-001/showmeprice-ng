@@ -22,9 +22,12 @@ serve(async (req) => {
 
   const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const serviceKey = Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-  if (!secret || !supabaseUrl || !serviceKey) return new Response("Missing env", { status: 500 });
+  if (!serviceKey) {
+    return new Response("Missing SERVICE_ROLE_KEY secret", { status: 500 });
+  }
+  if (!secret || !supabaseUrl) return new Response("Missing env", { status: 500 });
 
   // MUST verify signature against RAW body
   const rawBody = await req.text();
@@ -67,18 +70,20 @@ serve(async (req) => {
   });
 
   // If duplicate event => idempotent ACK
-  if (ins.error) return new Response("OK", { status: 200 });
+  if (ins.error) {
+    if (ins.error.code !== "23505") {
+      console.error("paystack-webhook:escrow_events insert failed", ins.error);
+    }
+    return new Response("OK", { status: 200 });
+  }
 
   // Apply state transition only once
-  if (type === "charge.success" && order?.id) {
+  if (type === "charge.success" && reference) {
+    const nowIso = new Date().toISOString();
     await db
       .from("escrow_orders")
-      .update({
-        status: "funded",
-        funded: true,
-        paid_at: new Date().toISOString(),
-      })
-      .eq("id", order.id)
+      .update({ status: "funded", paid_at: nowIso, updated_at: nowIso })
+      .eq("paystack_reference", reference)
       .in("status", ["initialized", "pending"]);
   }
 
