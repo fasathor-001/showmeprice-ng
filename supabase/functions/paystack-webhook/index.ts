@@ -18,6 +18,18 @@ async function hmacSha512Hex(secret: string, message: string) {
 }
 
 serve(async (req) => {
+  const hasSig = !!req.headers.get("x-paystack-signature");
+  try {
+    const url = new URL(req.url);
+    console.log("paystack-webhook:request", {
+      method: req.method,
+      path: url.pathname,
+      hasSig,
+    });
+  } catch {
+    console.log("paystack-webhook:request", { method: req.method, path: "", hasSig });
+  }
+
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
   const secret = Deno.env.get("PAYSTACK_SECRET_KEY");
@@ -34,7 +46,10 @@ serve(async (req) => {
   const receivedSig = req.headers.get("x-paystack-signature") ?? "";
   const computedSig = await hmacSha512Hex(secret, rawBody);
 
-  if (computedSig !== receivedSig) return new Response("Invalid signature", { status: 401 });
+  if (computedSig !== receivedSig) {
+    console.warn("Invalid signature", { hasSig, bodyLen: rawBody.length });
+    return new Response("Invalid signature", { status: 401 });
+  }
 
   let evt: any;
   try {
@@ -47,6 +62,8 @@ serve(async (req) => {
   const type = String(evt?.event ?? "");
   const event_id = String(evt?.id ?? "");
   const reference = String(evt?.data?.reference ?? "");
+
+  console.log("paystack-webhook:event", { type, reference: reference || "" });
 
   if (!type || !reference) return new Response("OK", { status: 200 });
 
