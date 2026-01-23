@@ -96,6 +96,38 @@ function normalizeProducts(list: any[]): any[] {
   return (list || []).map(normalizeProduct);
 }
 
+async function attachSellerBadges(rows: any[]): Promise<any[]> {
+  if (!rows.length) return rows;
+  const ownerIds = Array.from(
+    new Set(
+      rows
+        .map((r) => String(r?.owner_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+  if (!ownerIds.length) return rows;
+  try {
+    const { data, error } = await supabase.rpc("public_get_seller_badges", { owner_ids: ownerIds });
+    if (error || !Array.isArray(data)) return rows;
+    const map = new Map<string, any>();
+    data.forEach((row: any) => {
+      const id = String(row?.owner_id ?? "");
+      if (id) map.set(id, row);
+    });
+    return rows.map((r) => {
+      const badge = map.get(String(r?.owner_id ?? ""));
+      if (!badge) return r;
+      return {
+        ...r,
+        seller_is_verified: !!badge.is_verified,
+        seller_verification_tier: badge.verification_tier ?? null,
+      };
+    });
+  } catch {
+    return rows;
+  }
+}
+
 /**
  * Recent feed (non-deals by default)
  */
@@ -131,7 +163,10 @@ export function useRecentProducts(limit = 24, refreshKey?: number): BaseResult<P
         setError(toErrorMessage(e));
         setProducts([]);
       } else {
-        setProducts(normalizeProducts((data ?? []) as any) as any);
+        const normalized = normalizeProducts((data ?? []) as any) as any;
+        const withBadges = await attachSellerBadges(normalized);
+        const withBadges = await attachSellerBadges(normalized);
+        setProducts(withBadges as any);
       }
 
       setLoading(false);
@@ -190,7 +225,9 @@ export function useDealProducts(opts?: { season?: string | null; limit?: number 
         setError(toErrorMessage(e));
         setProducts([]);
       } else {
-        setProducts(normalizeProducts((data ?? []) as any) as any);
+        const normalized = normalizeProducts((data ?? []) as any) as any;
+        const withBadges = await attachSellerBadges(normalized);
+        setProducts(withBadges as any);
       }
 
       setLoading(false);
@@ -283,8 +320,8 @@ export function useProductSearch(initial?: Partial<SearchParams>) {
         setHasMore(((p.page + 1) * p.pageSize) < (count ?? 0));
 
         setResults((prev) => {
-          if (p.page === 0) return normalized as any;
-          return [...(prev as any), ...(normalized as any)] as any;
+          if (p.page === 0) return withBadges as any;
+          return [...(prev as any), ...(withBadges as any)] as any;
         });
       } catch (e: any) {
         setError(toErrorMessage(e));
@@ -385,7 +422,13 @@ export function useSingleProduct(productId: string | number | null) {
         setProduct(null);
       } else {
         const row = Array.isArray(data) ? data[0] : (data as any);
-        setProduct((row ? normalizeProduct(row) : null) as any);
+        if (!row) {
+          setProduct(null);
+        } else {
+          const normalized = normalizeProduct(row);
+          const withBadges = await attachSellerBadges([normalized]);
+          setProduct((withBadges[0] ?? null) as any);
+        }
       }
 
       setLoading(false);

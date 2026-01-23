@@ -117,6 +117,7 @@ function getProductImages(product: any): string[] {
 }
 
 function verificationLabelFor(product: ProductWithRelations) {
+  if ((product as any)?.seller_is_verified === true) return "Verified";
   const tier = String((product as any)?.businesses?.verification_tier ?? "").toLowerCase();
   const status = String((product as any)?.businesses?.verification_status ?? "").toLowerCase();
   if (status === "verified" || status === "approved" || tier === "verified" || tier === "premium") return "Verified";

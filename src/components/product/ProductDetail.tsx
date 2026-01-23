@@ -173,7 +173,11 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
   const tier = (product as any)?.businesses?.verification_tier || "basic";
   const verificationStatus = String((product as any)?.businesses?.verification_status ?? "").toLowerCase();
+  const sellerBadgeFlag = (product as any)?.seller_is_verified === true;
+  const sellerBadgeTier = String((product as any)?.seller_verification_tier ?? "").toLowerCase();
   const isSellerVerified =
+    sellerBadgeFlag ||
+    sellerBadgeTier === "verified" ||
     verificationStatus === "verified" ||
     verificationStatus === "approved" ||
     tier === "verified" ||
