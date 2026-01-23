@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "../lib/supabase";
+import { getAccessToken } from "../lib/getAccessToken";
 
 function nav(to: string) {
   if (typeof window === "undefined") return;
@@ -13,6 +13,7 @@ export default function EscrowReturnPage() {
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
   const inFlight = useRef(false);
 
   const reference = typeof window !== "undefined"
@@ -36,17 +37,38 @@ export default function EscrowReturnPage() {
     setError(null);
 
     try {
-      const { data, error: fnErr } = await supabase.functions.invoke("verify_escrow_status", {
-        body: { reference },
+      let token = "";
+      try {
+        token = await getAccessToken();
+      } catch {
+        setError("Please sign in to verify payment.");
+        setStatus("Unable to verify payment.");
+        return false;
+      }
+
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/escrow-verify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          apikey: String(import.meta.env.VITE_SUPABASE_ANON_KEY || ""),
+        },
+        body: JSON.stringify({ reference }),
       });
 
-      if (fnErr) throw fnErr;
-      const funded = Boolean((data as any)?.funded);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(data?.error || "Failed to verify payment.");
+      }
 
-      if (funded) {
-        nav(`/escrow/success?reference=${encodeURIComponent(reference)}`);
+      const ok = Boolean((data as any)?.ok);
+      const status = String((data as any)?.status ?? "").toLowerCase();
+      if (ok && status === "success") {
+        setConfirmed(true);
+        setStatus("Payment confirmed.");
         return true;
       }
+
       return false;
     } catch (e: any) {
       setError(e?.message ?? "Failed to verify payment.");
@@ -71,6 +93,7 @@ export default function EscrowReturnPage() {
 
     setStatus("Confirming payment...");
     setTimedOut(false);
+    setConfirmed(false);
     setError(null);
 
     const run = async () => {
@@ -83,7 +106,7 @@ export default function EscrowReturnPage() {
 
       if (!cancelled) {
         setTimedOut(true);
-        setStatus("Payment pending. Please refresh in a moment.");
+        setStatus("Payment not confirmed yet.");
       }
     };
 
@@ -102,15 +125,30 @@ export default function EscrowReturnPage() {
           type="button"
           onClick={() => {
             setTimedOut(false);
+            setConfirmed(false);
             setStatus("Confirming payment...");
             verifyNow();
           }}
           disabled={checking}
           className="px-4 py-2 rounded-xl bg-slate-900 text-white font-black hover:opacity-90 disabled:opacity-60"
         >
-          {checking ? "Checking..." : "Refresh status"}
+          {checking ? "Checking..." : "Try again"}
         </button>
       </div>
+      {confirmed ? (
+        <div className="mt-4 text-sm text-emerald-700 font-semibold">
+          Payment confirmed. You can view your escrow order details now.
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => nav("/escrow")}
+              className="px-3 py-2 rounded-lg border text-slate-700 font-semibold hover:bg-slate-50"
+            >
+              View Escrow Orders
+            </button>
+          </div>
+        </div>
+      ) : null}
       {timedOut ? (
         <div className="mt-4 text-sm text-slate-600">
           If this takes too long, check your Inbox or return to the marketplace.

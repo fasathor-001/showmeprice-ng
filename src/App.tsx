@@ -33,6 +33,7 @@ import ReportsPage from "./pages/ReportsPage";
 import InstitutionPage from "./pages/InstitutionPage";
 import SellerProfileSetupPage from "./pages/SellerProfileSetupPage";
 import VerificationPage from "./pages/account/VerificationPage";
+import EscrowReturnPage from "./pages/EscrowReturnPage";
 
 type HomeMode = "home" | "marketplace" | "product";
 type InboxInit = { chatId?: string; userId?: string; productId?: string } | null;
@@ -339,6 +340,7 @@ export default function App() {
     }
 
     if (path === "/help" || path === "/help/") return <HelpPage />;
+    if (path === "/escrow/return") return <EscrowReturnPage />;
 
     if (path === "/my-shop") {
       return (

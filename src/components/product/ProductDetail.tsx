@@ -532,17 +532,15 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke("create_escrow_order", {
+      const { data, error } = await supabase.functions.invoke("escrow-init", {
         body: {
           product_id: safeText(productId),
-          amount: amountKobo,
-          currency: "NGN",
         },
         headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       const authorizationUrl = String((data as any)?.authorization_url ?? "").trim();
-      const orderId = String((data as any)?.order_id ?? "").trim();
+      const orderId = String((data as any)?.escrow_order_id ?? "").trim();
       if (!authorizationUrl) {
         throw new Error("Missing Paystack authorization URL.");
       }
