@@ -165,7 +165,6 @@ export function useRecentProducts(limit = 24, refreshKey?: number): BaseResult<P
       } else {
         const normalized = normalizeProducts((data ?? []) as any) as any;
         const withBadges = await attachSellerBadges(normalized);
-        const withBadges = await attachSellerBadges(normalized);
         setProducts(withBadges as any);
       }
 
