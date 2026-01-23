@@ -153,7 +153,7 @@ serve(async (req) => {
       email: buyer.email ?? "",
       amount: totalKobo,
       reference,
-      callback_url: `${siteUrl.replace(/\/+$/, "")}/escrow/callback?reference=${reference}`,
+      callback_url: `${siteUrl.replace(/\/+$/, "")}/escrow/callback`,
       metadata: {
         escrow_order_id: orderRow.id,
         product_id: productId,

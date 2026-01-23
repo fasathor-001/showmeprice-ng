@@ -340,7 +340,8 @@ export default function App() {
     }
 
     if (path === "/help" || path === "/help/") return <HelpPage />;
-    if (path === "/escrow/return") return <EscrowReturnPage />;
+    if (path === "/escrow/callback" || path === "/escrow/return" || path === "/escrow/success")
+      return <EscrowReturnPage />;
 
     if (path === "/my-shop") {
       return (

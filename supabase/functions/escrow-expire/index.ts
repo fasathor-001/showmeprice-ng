@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cron-secret",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 function jsonResponse(status: number, body: Record<string, unknown>) {
@@ -38,7 +39,8 @@ serve(async (req) => {
     body = {};
   }
 
-  const cutoffMinutes = Number(body?.cutoff_minutes ?? 30);
+  const rawCutoff = Number(body?.cutoff_minutes ?? 30);
+  const cutoffMinutes = Math.min(1440, Math.max(5, Number.isFinite(rawCutoff) ? rawCutoff : 30));
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
@@ -50,5 +52,9 @@ serve(async (req) => {
     return jsonResponse(500, { error: "Failed to expire escrow orders." });
   }
 
-  return jsonResponse(200, { ok: true, expired_count: data ?? 0 });
+  return jsonResponse(200, {
+    ok: true,
+    cutoff_minutes: cutoffMinutes,
+    expired_count: data ?? 0,
+  });
 });

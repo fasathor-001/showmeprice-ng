@@ -17,13 +17,14 @@ export default function EscrowReturnPage() {
   const [needsLogin, setNeedsLogin] = useState(false);
   const inFlight = useRef(false);
 
-  const reference = typeof window !== "undefined"
-    ? String(
-        new URLSearchParams(window.location.search).get("reference") ??
-          new URLSearchParams(window.location.search).get("trxref") ??
-          ""
-      ).trim()
-    : "";
+  const reference =
+    typeof window !== "undefined"
+      ? String(
+          new URLSearchParams(window.location.search).get("reference") ||
+            new URLSearchParams(window.location.search).get("trxref") ||
+            ""
+        ).trim()
+      : "";
 
   const verifyNow = useCallback(async () => {
     if (!reference) {
@@ -77,8 +78,8 @@ export default function EscrowReturnPage() {
       }
 
       const ok = Boolean((data as any)?.ok);
-      const status = String((data as any)?.status ?? "").toLowerCase();
-      if (ok && status === "success") {
+      const verifyStatus = String((data as any)?.status ?? "").toLowerCase();
+      if (ok && verifyStatus === "success") {
         setConfirmed(true);
         setStatus("Payment confirmed.");
         return true;
@@ -121,7 +122,7 @@ export default function EscrowReturnPage() {
 
       if (!cancelled) {
         setTimedOut(true);
-        setStatus("Payment not confirmed yet.");
+        setStatus("Payment pending / not found yet.");
       }
     };
 
@@ -135,6 +136,27 @@ export default function EscrowReturnPage() {
     <div className="w-full max-w-2xl mx-auto px-4 py-10">
       <h1 className="text-2xl font-black text-slate-900 mb-2">Payment Verification</h1>
       <p className="text-sm text-slate-600">{status}</p>
+      {!reference ? (
+        <div className="mt-4 text-sm text-slate-600">
+          We couldn't find your payment reference. Please return to the marketplace or your dashboard.
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => nav("/")}
+              className="px-3 py-2 rounded-lg border text-slate-700 font-semibold hover:bg-slate-50"
+            >
+              Back to Home
+            </button>
+            <button
+              type="button"
+              onClick={() => nav("/dashboard")}
+              className="px-3 py-2 rounded-lg border text-slate-700 font-semibold hover:bg-slate-50"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="mt-4">
         <button
           type="button"
@@ -152,7 +174,7 @@ export default function EscrowReturnPage() {
       </div>
       {confirmed ? (
         <div className="mt-4 text-sm text-emerald-700 font-semibold">
-          Payment confirmed. You can view your escrow order details now.
+          Payment confirmed.
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
@@ -180,21 +202,26 @@ export default function EscrowReturnPage() {
       ) : null}
       {timedOut ? (
         <div className="mt-4 text-sm text-slate-600">
-          If this takes too long, check your Inbox or return to the marketplace.
+          Payment pending / not found yet.
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => nav("/inbox")}
+              onClick={() => {
+                setTimedOut(false);
+                setConfirmed(false);
+                setStatus("Confirming payment...");
+                verifyNow();
+              }}
               className="px-3 py-2 rounded-lg border text-slate-700 font-semibold hover:bg-slate-50"
             >
-              Go to Inbox
+              Try again
             </button>
             <button
               type="button"
-              onClick={() => nav("/")}
+              onClick={() => nav("/escrow")}
               className="px-3 py-2 rounded-lg border text-slate-700 font-semibold hover:bg-slate-50"
             >
-              Back to Home
+              View Escrow Orders
             </button>
           </div>
         </div>
