@@ -164,8 +164,8 @@ export function useRecentProducts(limit = 24, refreshKey?: number): BaseResult<P
         setProducts([]);
       } else {
         const normalized = normalizeProducts((data ?? []) as any) as any;
-        const withBadges = await attachSellerBadges(normalized);
-        setProducts(withBadges as any);
+        const productsWithBadges = await attachSellerBadges(normalized);
+        setProducts(productsWithBadges as any);
       }
 
       setLoading(false);
@@ -225,8 +225,8 @@ export function useDealProducts(opts?: { season?: string | null; limit?: number 
         setProducts([]);
       } else {
         const normalized = normalizeProducts((data ?? []) as any) as any;
-        const withBadges = await attachSellerBadges(normalized);
-        setProducts(withBadges as any);
+        const productsWithBadges = await attachSellerBadges(normalized);
+        setProducts(productsWithBadges as any);
       }
 
       setLoading(false);
@@ -314,13 +314,14 @@ export function useProductSearch(initial?: Partial<SearchParams>) {
         if (e) throw e;
 
         const normalized = normalizeProducts((data ?? []) as any) as any;
+        const pageWithBadges = await attachSellerBadges(normalized);
 
         setTotal(typeof count === "number" ? count : null);
         setHasMore(((p.page + 1) * p.pageSize) < (count ?? 0));
 
         setResults((prev) => {
-          if (p.page === 0) return withBadges as any;
-          return [...(prev as any), ...(withBadges as any)] as any;
+          if (p.page === 0) return pageWithBadges as any;
+          return [...(prev as any), ...(pageWithBadges as any)] as any;
         });
       } catch (e: any) {
         setError(toErrorMessage(e));
@@ -425,8 +426,8 @@ export function useSingleProduct(productId: string | number | null) {
           setProduct(null);
         } else {
           const normalized = normalizeProduct(row);
-          const withBadges = await attachSellerBadges([normalized]);
-          setProduct((withBadges[0] ?? null) as any);
+          const productWithBadges = await attachSellerBadges([normalized]);
+          setProduct((productWithBadges[0] ?? null) as any);
         }
       }
 
