@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { getAccessToken } from "../lib/getAccessToken";
+import { supabase } from "../lib/supabase";
 
 function nav(to: string) {
   if (typeof window === "undefined") return;
@@ -14,6 +14,7 @@ export default function EscrowReturnPage() {
   const [checking, setChecking] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [needsLogin, setNeedsLogin] = useState(false);
   const inFlight = useRef(false);
 
   const reference = typeof window !== "undefined"
@@ -35,30 +36,44 @@ export default function EscrowReturnPage() {
     inFlight.current = true;
     setChecking(true);
     setError(null);
+    setNeedsLogin(false);
 
     try {
-      let token = "";
-      try {
-        token = await getAccessToken();
-      } catch {
+      const callVerify = async (accessToken: string) => {
+        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/escrow-verify`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+            apikey: String(import.meta.env.VITE_SUPABASE_ANON_KEY || ""),
+          },
+          body: JSON.stringify({ reference }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        return { resp, data };
+      };
+
+      const { data: sessRes } = await supabase.auth.getSession();
+      const session = sessRes?.session;
+      if (!session?.access_token) {
+        setNeedsLogin(true);
         setError("Please sign in to verify payment.");
         setStatus("Unable to verify payment.");
         return false;
       }
 
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/escrow-verify`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-          apikey: String(import.meta.env.VITE_SUPABASE_ANON_KEY || ""),
-        },
-        body: JSON.stringify({ reference }),
-      });
+      let { resp, data } = await callVerify(session.access_token);
+      if (resp.status === 401) {
+        await supabase.auth.refreshSession();
+        const { data: retrySess } = await supabase.auth.getSession();
+        const retryToken = retrySess?.session?.access_token;
+        if (retryToken) {
+          ({ resp, data } = await callVerify(retryToken));
+        }
+      }
 
-      const data = await resp.json().catch(() => ({}));
       if (!resp.ok) {
-        throw new Error(data?.error || "Failed to verify payment.");
+        throw new Error((data as any)?.error || "Failed to verify payment.");
       }
 
       const ok = Boolean((data as any)?.ok);
@@ -145,6 +160,20 @@ export default function EscrowReturnPage() {
               className="px-3 py-2 rounded-lg border text-slate-700 font-semibold hover:bg-slate-50"
             >
               View Escrow Orders
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {needsLogin ? (
+        <div className="mt-4 text-sm text-slate-700">
+          Please sign in to confirm your escrow payment.
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => nav("/signin")}
+              className="px-3 py-2 rounded-lg border text-slate-700 font-semibold hover:bg-slate-50"
+            >
+              Sign in
             </button>
           </div>
         </div>
