@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# local migration debug artifacts
+_supabase_migrations_dump.sql
+remote_migrations.csv
+supabase/_hold_migrations/
+
