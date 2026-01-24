@@ -15,10 +15,12 @@ const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY ?? "").trim();
 
 function assertValidConfig() {
   if (!supabaseUrl || !supabaseAnonKey) {
-    // This makes the error obvious instead of looking like CORS/network issues.
-    throw new Error(
-      "Missing Supabase config. Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY exist in your .env and restart `npm run dev`."
-    );
+    const msg =
+      "Missing Supabase env. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env (Vite).";
+    if (import.meta.env.DEV) {
+      throw new Error(msg);
+    }
+    throw new Error(msg);
   }
   if (!/^https?:\/\//i.test(supabaseUrl)) {
     throw new Error(`Invalid VITE_SUPABASE_URL: "${supabaseUrl}" (must start with http/https).`);

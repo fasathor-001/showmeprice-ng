@@ -7,6 +7,12 @@ import "./lib/lucideRefresh";
 import { FeatureFlagsProvider } from "./contexts/FeatureFlagsContext";
 
 console.log("BOOT: React starting");
+if (import.meta.env.DEV) {
+  console.log("SUPABASE ENV OK", {
+    urlPresent: !!import.meta.env.VITE_SUPABASE_URL,
+    anonKeyLen: import.meta.env.VITE_SUPABASE_ANON_KEY?.length ?? 0,
+  });
+}
 
 if (import.meta.env.DEV && "serviceWorker" in navigator) {
   navigator.serviceWorker.getRegistrations().then((regs) => {
