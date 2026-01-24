@@ -43,7 +43,9 @@ export function useMembership() {
 
       if (error) throw error;
 
-      const tier = normalizeTier((data as any)?.membership_tier ?? (data as any)?.membershipTier);
+      const tier = normalizeTier(
+        (data as any)?.membership_tier ?? (data as any)?.membership_1 ?? (data as any)?.membershipTier
+      );
       setState({ tier, loading: false, error: null });
       lastLoadedFor.current = userId;
     } catch (e: any) {

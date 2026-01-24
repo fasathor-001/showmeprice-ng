@@ -350,16 +350,18 @@ export default function AccountShell({
   }, [authReady, user, profileLoading, profileError, isAdmin, profile, path]);
 
   const fullNameRaw = String((profile as any)?.full_name ?? "").trim();
-  const phoneRaw = String((profile as any)?.phone ?? "").trim();
+  const phoneRaw = String((profile as any)?.phone_number ?? (profile as any)?.phone ?? "").trim();
   const cityRaw = String((profile as any)?.city ?? "").trim();
   const stateIdRaw = (profile as any)?.state_id;
+  const stateRaw = String((profile as any)?.state ?? "").trim();
   const fullNameOk =
     !!fullNameRaw &&
     fullNameRaw.toLowerCase() !== "new user" &&
     !/^(user|buyer|seller)\s+[0-9a-f]{4,}$/i.test(fullNameRaw);
   const phoneOk = !!phoneRaw && phoneRaw.toLowerCase() !== "pending";
   const cityOk = !!cityRaw && cityRaw.toLowerCase() !== "pending";
-  const baseComplete = fullNameOk && phoneOk && cityOk && Number.isFinite(Number(stateIdRaw));
+  const stateOk = Number.isFinite(Number(stateIdRaw)) || !!stateRaw;
+  const baseComplete = fullNameOk && phoneOk && cityOk && stateOk;
   const sellerBusinessOk = !isSeller
     ? true
     : !!String((business as any)?.business_name ?? "").trim() &&

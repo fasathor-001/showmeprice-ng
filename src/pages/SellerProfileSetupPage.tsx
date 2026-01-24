@@ -87,7 +87,7 @@ export default function SellerProfileSetupPage() {
           const { data, error } = await supabase
             .from("businesses")
             .select("business_name,business_type,state_id,city,address,whatsapp_number,phone_number,description")
-            .eq("user_id", user.id)
+            .or(`owner_id.eq.${user.id},user_id.eq.${user.id}`)
             .limit(1);
 
           if (error) throw error;
@@ -133,8 +133,19 @@ export default function SellerProfileSetupPage() {
   };
 
   const save = async () => {
-    if (!user?.id) {
-      setErr("Please sign in to complete seller setup.");
+    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    const authUser = authData?.user ?? null;
+    if (authErr || !authUser?.id) {
+      const msg = "Please log in";
+      setErr(msg);
+      try {
+        window.dispatchEvent(new CustomEvent("smp:toast", { detail: { type: "error", message: msg } }));
+      } catch {}
+      try {
+        window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode: "login" } }));
+      } catch {
+        nav("/signin");
+      }
       return;
     }
 
@@ -149,9 +160,20 @@ export default function SellerProfileSetupPage() {
     setSaving(true);
 
     try {
-      const payload: any = {
-        user_id: user.id,
-        owner_id: user.id,
+      const profilePayload = {
+        id: authUser.id,
+        full_name: safeStr((profile as any)?.full_name) || safeStr((authUser as any)?.user_metadata?.full_name) || null,
+        phone_number: normalizeNgPhone(form.phone) || null,
+        city: safeStr(form.city) || null,
+        state: null,
+        state_id: form.state_id ? Number(form.state_id) : null,
+        user_type: "seller",
+      };
+
+      const { error: profileErr } = await supabase.from("profiles").upsert(profilePayload, { onConflict: "id" });
+      if (profileErr) throw profileErr;
+
+      const payloadBase: any = {
         business_name: safeStr(form.business_name) || null,
         business_type: safeStr(form.business_type) || null,
         state_id: form.state_id ? Number(form.state_id) : null,
@@ -163,16 +185,30 @@ export default function SellerProfileSetupPage() {
         updated_at: new Date().toISOString(),
       };
 
-      const { error } = await supabase.from("businesses").upsert(payload, { onConflict: "user_id" });
-      if (error) throw error;
+      let bizError: any = null;
+      const { error: upsertErr } = await supabase
+        .from("businesses")
+        .upsert(payloadBase, { onConflict: "owner_id" });
+      bizError = upsertErr;
 
-      // Now that setup is saved, flip the profile to seller (idempotent)
-      const { error: pErr } = await supabase.from("profiles").update({ user_type: "seller" }).eq("id", user.id);
-      if (pErr) throw pErr;
+      const msg = String(bizError?.message || "");
+      const noUniqueConflict = msg.includes("no unique") || msg.includes("ON CONFLICT");
+      if (bizError && noUniqueConflict) {
+        const { data: existing } = await supabase
+          .from("businesses")
+          .select("id")
+          .or(`owner_id.eq.${authUser.id},user_id.eq.${authUser.id}`)
+          .maybeSingle();
+        if (existing?.id) {
+          const { error: updErr } = await supabase.from("businesses").update(payloadBase).eq("id", existing.id);
+          bizError = updErr;
+        } else {
+          const { error: insErr } = await supabase.from("businesses").insert(payloadBase);
+          bizError = insErr;
+        }
+      }
 
-      try {
-        await supabase.auth.updateUser({ data: { user_type: "seller" } });
-      } catch {}
+      if (bizError) throw bizError;
 
       setSaved(true);
 
@@ -183,10 +219,23 @@ export default function SellerProfileSetupPage() {
         return;
       }
 
+      try {
+        if (authUser?.id) {
+          localStorage.setItem(`smp:user_type:${authUser.id}`, "seller");
+        }
+      } catch {}
+
       // Seller is active after successful save
-      nav("/my-shop");
+      window.location.href = "/my-shop";
     } catch (e: any) {
       setErr(e?.message || "Failed to save setup.");
+      try {
+        window.dispatchEvent(
+          new CustomEvent("smp:toast", {
+            detail: { type: "error", message: e?.message || "Failed to save setup." },
+          })
+        );
+      } catch {}
     } finally {
       setSaving(false);
     }

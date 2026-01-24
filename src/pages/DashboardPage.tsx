@@ -57,7 +57,9 @@ export default function DashboardPage() {
 
   const profileReady = !!user && !profileLoading;
   const userType = profileReady ? String((profile as any)?.user_type ?? "").toLowerCase() : "";
-  const membership = profileReady ? String((profile as any)?.membership_tier ?? "free").toLowerCase() : "free";
+  const businessTier = profileReady ? String((business as any)?.seller_membership_tier ?? "").toLowerCase() : "";
+  const buyerTier = profileReady ? String((profile as any)?.membership_tier ?? (profile as any)?.membership_1 ?? "free").toLowerCase() : "free";
+  const membership = isSeller && businessTier ? businessTier : buyerTier;
   const isSeller = profileReady && userType === "seller";
 
   const messagingEnabled = !!FF?.messaging;

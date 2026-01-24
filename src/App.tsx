@@ -173,7 +173,7 @@ export default function App() {
 
         const { data: profileRow, error } = await supabase
           .from("profiles")
-          .select("id, user_type, business_name, business_type, city, state_id")
+          .select("id, user_type, full_name, phone_number, city, state, state_id")
           .eq("id", uid)
           .maybeSingle();
 
@@ -205,10 +205,10 @@ export default function App() {
 
         // Seller needs setup if missing key fields
         const needs =
-          !profileRow?.business_name ||
-          !profileRow?.business_type ||
+          !profileRow?.full_name ||
+          !profileRow?.phone_number ||
           !profileRow?.city ||
-          !profileRow?.state_id;
+          !(profileRow as any)?.state_id;
 
         if (alive) setSellerNeedsSetup(!!needs);
       } catch {

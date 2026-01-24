@@ -109,7 +109,7 @@ export function useProfile() {
       const { data: profileRow, error: pErr } = await supabase
         .from("profiles")
         .select(
-          "id, full_name, display_name, username, user_type, role, is_admin, membership_tier, business_name, phone, city, address, state_id"
+          "id, full_name, display_name, username, user_type, role, is_admin, membership_1, business_name, phone, phone_number, city, state, address, state_id"
         )
         .eq("id", userId)
         .maybeSingle();
@@ -117,6 +117,9 @@ export function useProfile() {
       if (pErr) throw pErr;
 
       let resolvedProfile = (profileRow as any) as ProfileRow | null;
+      if (resolvedProfile && !(resolvedProfile as any).membership_tier) {
+        (resolvedProfile as any).membership_tier = (resolvedProfile as any).membership_1 ?? null;
+      }
       if (!resolvedProfile) {
         let metaType = "";
         let metaRole = "";

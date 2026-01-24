@@ -95,7 +95,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   // Free    - INAPP MESSENGER only
   const messagingEnabled = !!FF.messaging;
   const canInAppMessage = messagingEnabled; // server-side enforcement still required; UI gate here
-  const canRevealContact = buyerTier === "pro" || buyerTier === "premium";
+  const canRevealContact = buyerTier === "pro" || buyerTier === "premium" || buyerTier === "institution";
   const escrowEnabled = !!FF?.isEnabled?.("escrow_enabled", false);
   const escrowEligible = canBuyerUseEscrow(viewerProfile, escrowEnabled);
   const showEscrow = escrowEnabled;
@@ -112,7 +112,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   const isInstitutionBuyer = viewerTier === "institution";
 
   const { institution, addToProcurement } = useInstitution();
-  const { reveal, data: contactData, loading: revealLoading, revealed, error: revealError } = useContactReveal();
+  const { reveal, data: contactData, loading: revealLoading, revealed } = useContactReveal();
 
   // --- core product fields (safe)
   const productId = (product as any)?.id;
@@ -175,20 +175,21 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   }, [productId, sellerUserId, user?.id]);
 
 
-  const tier = String(
-    (product as any)?.seller_verification_tier ??
-      (product as any)?.seller_verification_status ??
-      (product as any)?.verification_tier ??
-      (product as any)?.verification_status ??
-      ""
-  ).toLowerCase();
+  const tier = String((product as any)?.seller_verification_tier ?? "").toLowerCase();
+  const hasSellerBadge =
+    typeof (product as any)?.seller_is_verified === "boolean" || !!(product as any)?.seller_verification_tier;
   const isSellerVerified =
     (product as any)?.seller_is_verified === true || tier === "verified";
   const verificationTone = isSellerVerified ? "text-emerald-600" : "text-red-600";
-  const sellerBadgeLabel = isSellerVerified ? "Verified" : "Unverified";
-  const sellerMembershipTier = String((product as any)?.seller_membership_tier ?? "").toLowerCase();
+  const sellerBadgeLabel = hasSellerBadge ? (isSellerVerified ? "Verified" : "Unverified") : "";
+  const sellerMembershipTier = String((product as any)?.seller_membership_tier ?? "").toLowerCase().trim();
   const isSellerPremium = sellerMembershipTier === "premium";
-  const isSellerPro = sellerMembershipTier === "pro";
+  const sellerTierLabel =
+    sellerMembershipTier === "premium"
+      ? "PREMIUM SELLER"
+      : sellerMembershipTier === "pro"
+      ? "PRO SELLER"
+      : "";
 
   // discount
   const hasDiscount = !!originalPrice && Number(originalPrice) > Number(price);
@@ -301,19 +302,6 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
     }
   };
 
-  const revealUpgradeHandledRef = useRef(false);
-  useEffect(() => {
-    if (!revealError) {
-      revealUpgradeHandledRef.current = false;
-      return;
-    }
-    if (!String(revealError).includes("upgrade_required")) return;
-    if (revealUpgradeHandledRef.current) return;
-    revealUpgradeHandledRef.current = true;
-    emitToast("error", "Upgrade required to view seller contact.");
-    openPricing("contact");
-  }, [revealError]);
-
   const setPostAuthIntent = (intent: string) => {
     try {
       sessionStorage.setItem("smp:post_auth_intent", intent);
@@ -386,10 +374,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   };
 
   const handleReveal = async () => {
-    const targetId =
-      safeText((product as any)?.owner_id) ||
-      safeText((product as any)?.seller_id) ||
-      safeText(sellerUserId);
+    const targetId = safeText((product as any)?.business_id);
     if (!targetId) return;
     await reveal(String(targetId));
   };
@@ -720,7 +705,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
   const resolveCommentName = (userId: string) => {
     const comment = comments.find((c) => c.user_id === userId);
-    const name = safeText((comment as any)?.public_profiles?.display_name);
+    const name = safeText((comment as any)?.profiles?.display_name);
     if (name) return name;
     if (user?.id && userId === user.id && viewerEmailPrefix) return viewerEmailPrefix;
     return "Buyer";
@@ -805,14 +790,13 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                   </span>
                 ) : null}
 
-                {isSellerPremium || isSellerPro ? (
+                {sellerTierLabel ? (
                   <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-bold uppercase rounded tracking-wider border border-amber-200 flex items-center gap-1">
-                    <Crown className="w-3 h-3 fill-amber-700 text-amber-700" />{" "}
-                    {isSellerPremium ? "Premium Seller" : "Pro Seller"}
+                    <Crown className="w-3 h-3 fill-amber-700 text-amber-700" /> {sellerTierLabel}
                   </span>
                 ) : null}
 
-                {isSellerVerified && !isSellerPremium ? (
+                {isSellerVerified ? (
                   <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold uppercase rounded tracking-wider border border-emerald-200 flex items-center gap-1">
                     <BadgeCheck className="w-3 h-3" /> Verified Seller
                   </span>
@@ -1017,8 +1001,12 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                         ) : null}
                       </div>
                       <div className={`text-xs mt-1 flex items-center gap-2 ${isSellerPremium ? "text-slate-300" : "text-slate-500"}`}>
-                        <span className={`${verificationTone} font-bold`}>{sellerBadgeLabel}</span>
-                        <span className="w-1 h-1 rounded-full bg-slate-400"></span>
+                        {sellerBadgeLabel ? (
+                          <>
+                            <span className={`${verificationTone} font-bold`}>{sellerBadgeLabel}</span>
+                            <span className="w-1 h-1 rounded-full bg-slate-400"></span>
+                          </>
+                        ) : null}
                         <div className="flex items-center gap-1">
                           <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
                           <span className="font-bold">4.8</span>
@@ -1181,6 +1169,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                     </div>
                   ) : !revealed ? (
                     <button
+                      type="button"
                       onClick={handleReveal}
                       disabled={revealLoading}
                       className="text-xs font-bold underline text-slate-800 hover:text-slate-900 mt-3"

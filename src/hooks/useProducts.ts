@@ -101,28 +101,27 @@ async function attachSellerBadges(rows: any[]): Promise<any[]> {
   const ids = Array.from(
     new Set(
       rows
-        .map((r) => String(r?.business_id ?? r?.owner_id ?? r?.seller_id ?? "").trim())
+        .map((r) => String(r?.owner_id ?? "").trim())
         .filter(Boolean)
     )
   );
   if (!ids.length) return rows;
   try {
-    const { data, error } = await supabase.rpc("public_get_seller_badges", { ids });
+    const { data, error } = await supabase.rpc("public_get_seller_badges", { owner_ids: ids });
     if (error || !Array.isArray(data)) return rows;
     const map = new Map<string, any>();
     data.forEach((row: any) => {
-      const id = String(row?.key ?? "");
+      const id = String(row?.owner_id ?? "");
       if (id) map.set(id, row);
     });
     return rows.map((r) => {
-      const badgeKey = String(r?.business_id ?? r?.owner_id ?? r?.seller_id ?? "");
-      const badge = map.get(badgeKey);
+      const badge = map.get(String(r?.owner_id ?? ""));
       if (!badge) return r;
       return {
         ...r,
         seller_is_verified: badge.seller_is_verified === true,
         seller_verification_tier: badge.seller_verification_tier ?? null,
-        seller_membership_tier: badge.seller_membership_tier ?? null,
+        seller_membership_tier: String(badge.seller_membership_tier ?? "").toLowerCase() || null,
       };
     });
   } catch {

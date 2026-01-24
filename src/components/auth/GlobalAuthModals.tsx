@@ -161,6 +161,47 @@ export default function GlobalAuthModals() {
     setShowPassword((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
+  const ensureProfile = async () => {
+    try {
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr || !userData?.user) return { ok: false, reason: "auth_required" };
+
+      const user = userData.user;
+      const { data: existing, error: fetchErr } = await supabase
+        .from("profiles")
+        .select("id, full_name, display_name, first_name, last_name")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      if (fetchErr) throw fetchErr;
+      if (existing?.id) return { ok: true };
+
+      const email = String(user.email ?? "");
+      const emailPrefix = email.includes("@") ? email.split("@")[0] : email;
+      const meta = (user.user_metadata as any) ?? {};
+      const derivedName = String(meta.full_name || meta.name || emailPrefix || "User").trim();
+
+      const { error: insErr } = await supabase.from("profiles").insert({
+        id: user.id,
+        email: user.email ?? null,
+        full_name: derivedName || null,
+        display_name: derivedName || null,
+      });
+      if (insErr) throw insErr;
+      return { ok: true };
+    } catch (error: any) {
+      console.error("profiles ensureProfile error", error);
+      try {
+        window.dispatchEvent(
+          new CustomEvent("smp:toast", {
+            detail: { type: "error", message: error?.message || "Profile setup failed." },
+          })
+        );
+      } catch {}
+      return { ok: false, reason: "error" };
+    }
+  };
+
   function navigateToHomeAndMaybeDashboard(isSeller: boolean) {
     if (!isSeller) return;
 
@@ -272,27 +313,24 @@ export default function GlobalAuthModals() {
       // Email confirmation ON (user created, session not created yet)
       if (data?.user && !data?.session) {
         setRegSuccess(true);
+        try {
+          window.dispatchEvent(
+            new CustomEvent("smp:toast", {
+              detail: { type: "info", message: "Check your email to confirm your account." },
+            })
+          );
+        } catch {}
         return;
       }
 
       // Logged in immediately (Email confirmation OFF)
       if (data?.session) {
         try {
-          const userId = String(data.session.user?.id ?? "").trim();
-          if (!userId) throw new Error("Missing user id.");
-          const profilePayload = {
-            id: userId,
-            full_name: name,
-            display_name: name,
-            phone,
-            city: city || null,
-            state_id: stateId,
-            user_type: userType,
-            business_name: businessName || null,
-            address: userType === "seller" ? businessAddress : null,
-          } as any;
-          const { error: upErr } = await supabase.from("profiles").upsert(profilePayload, { onConflict: "id" });
-          if (upErr) throw upErr;
+          const ensured = await ensureProfile();
+          if (!ensured.ok && ensured.reason === "auth_required") {
+            setAuthError("Please sign in to continue.");
+            return;
+          }
         } catch (err: any) {
           console.error("Profile upsert failed after sign up:", err);
           setAuthError(err?.message || "Signup completed, but profile setup failed.");

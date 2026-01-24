@@ -50,21 +50,17 @@ export function useProductSubmission() {
 
       // ---- Membership tier fetch ----
       let plan: MembershipTier = "free";
-      const { data: userRows, error: userErr } = await supabase
-        .from("profiles")
-        .select("membership_tier")
-        .eq("id", user.id)
-        .limit(1);
+      const { data: bizRow, error: bizErr } = await supabase
+        .from("businesses")
+        .select("seller_membership_tier")
+        .eq("id", data.business_id)
+        .maybeSingle();
 
-      if (userErr) console.error("Error fetching membership tier:", userErr);
+      if (bizErr) console.error("Error fetching membership tier:", bizErr);
 
-      const row = userRows && userRows.length > 0 ? (userRows[0] as any) : null;
-      if (row?.membership_tier) {
-        // keep your existing mapping
-        plan =
-          row.membership_tier === "premium"
-            ? ("business" as MembershipTier)
-            : (row.membership_tier as MembershipTier);
+      const tier = String((bizRow as any)?.seller_membership_tier ?? "").toLowerCase();
+      if (tier) {
+        plan = tier === "premium" ? ("business" as MembershipTier) : (tier as MembershipTier);
       }
 
       // ---- Enforce listing limit (TIER_LIMITS is a number in your project) ----

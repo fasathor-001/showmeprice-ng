@@ -32,14 +32,14 @@ export function useSellerEngagement(
     async (limit: number) => {
       const { data: rows } = await supabase
         .from("business_follows")
-        .select("id,created_at,user_id,public_profiles(display_name,avatar_url)")
+        .select("id,created_at,user_id,profiles(display_name,avatar_url,full_name)")
         .eq("business_id", String(businessId ?? ""))
         .order("created_at", { ascending: false })
         .limit(limit);
       return (rows ?? []).map((row: any) => ({
         id: String(row.id),
         created_at: row.created_at,
-        user: row.public_profiles ?? null,
+        user: row.profiles ?? null,
       })) as RecentItem[];
     },
     [businessId]
@@ -61,7 +61,7 @@ export function useSellerEngagement(
 
       const { data: rows } = await supabase
         .from("product_views")
-        .select("id,created_at,viewer_id,product_id,public_profiles(display_name,avatar_url)")
+        .select("id,created_at,viewer_id,product_id,profiles(display_name,avatar_url,full_name)")
         .in("product_id", productIds)
         .order("created_at", { ascending: false })
         .limit(limit);
@@ -70,7 +70,7 @@ export function useSellerEngagement(
         id: String(row.id),
         created_at: row.created_at,
         product_title: productTitleById[String(row.product_id)] ?? "",
-        user: row.public_profiles ?? null,
+        user: row.profiles ?? null,
       })) as RecentItem[];
     },
     [businessId]
@@ -92,7 +92,7 @@ export function useSellerEngagement(
 
       const { data: rows } = await supabase
         .from("product_saves")
-        .select("id,created_at,user_id,product_id,public_profiles(display_name,avatar_url)")
+        .select("id,created_at,user_id,product_id,profiles(display_name,avatar_url,full_name)")
         .in("product_id", productIds)
         .order("created_at", { ascending: false })
         .limit(limit);
@@ -101,7 +101,7 @@ export function useSellerEngagement(
         id: String(row.id),
         created_at: row.created_at,
         product_title: productTitleById[String(row.product_id)] ?? "",
-        user: row.public_profiles ?? null,
+        user: row.profiles ?? null,
       })) as RecentItem[];
     },
     [businessId]

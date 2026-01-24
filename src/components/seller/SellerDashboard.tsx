@@ -72,7 +72,8 @@ export default function SellerDashboard({ onNavigateHome, onPostProduct }: Selle
   const dealsPostingOpen = dealsLive && !flagsLoading && !!isEnabled?.("deals_posting_enabled");
   const canPostDeal = dealsLive && dealsPostingOpen;
 
-  const membership = String((profile as any)?.membership_tier ?? "free").toLowerCase();
+  const membership = String((business as any)?.seller_membership_tier ?? (profile as any)?.membership_tier ?? "free")
+    .toLowerCase();
   const escrowEnabled = !!FF?.isEnabled?.("escrow_enabled", false);
   const escrowEligible = escrowEnabled && (membership === "premium" || membership === "institution");
   const [escrowOrders, setEscrowOrders] = useState<any[]>([]);

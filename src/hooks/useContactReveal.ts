@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useProfile } from "./useProfile";
-import { canBuyerRevealContact } from "../lib/plans";
 import { useFF } from "./useFF";
 
 export type SellerContact = {
@@ -27,14 +26,21 @@ export function useContactReveal() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const viewerPaid = useMemo(() => canBuyerRevealContact(profile), [profile]);
+  const viewerTier = useMemo(
+    () => String((profile as any)?.membership_tier ?? (profile as any)?.membership_1 ?? "free").toLowerCase(),
+    [profile]
+  );
+  const viewerPaid = useMemo(
+    () => ["pro", "premium", "institution"].includes(viewerTier),
+    [viewerTier]
+  );
   const canReveal = useMemo(() => viewerPaid && (whatsappEnabled || phoneEnabled), [viewerPaid, whatsappEnabled, phoneEnabled]);
 
   const reveal = useCallback(
-    async (sellerUserId: string): Promise<SellerContact | null> => {
+    async (businessId: string): Promise<SellerContact | null> => {
       setError(null);
 
-      if (!sellerUserId) {
+      if (!businessId) {
         setError("Seller not found.");
         return null;
       }
@@ -46,14 +52,24 @@ export function useContactReveal() {
 
       setLoading(true);
       try {
+        const { data: sessionRes } = await supabase.auth.getSession();
+        if (!sessionRes?.session?.access_token) {
+          setError("auth_required");
+          window.dispatchEvent(
+            new CustomEvent("smp:toast", { detail: { type: "error", message: "Please sign in to reveal contact." } })
+          );
+          window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode: "login", reason: "contact" } }));
+          return null;
+        }
+
         const { data: rpcData, error: rpcErr } = await supabase
-          .rpc("reveal_seller_contact", { seller_owner_id: sellerUserId });
+          .rpc("reveal_seller_contact", { business_id: businessId });
 
         if (rpcErr) throw rpcErr;
 
         const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
-        const whatsapp = whatsappEnabled ? cleanPhone((row as any)?.whatsapp) : "";
-        const phone = phoneEnabled ? cleanPhone((row as any)?.phone) : "";
+        const whatsapp = whatsappEnabled ? cleanPhone((row as any)?.whatsapp_number ?? (row as any)?.whatsapp) : "";
+        const phone = phoneEnabled ? cleanPhone((row as any)?.phone ?? (row as any)?.phone_number) : "";
 
         const contact: SellerContact = {
           whatsapp: whatsapp || null,
@@ -71,8 +87,25 @@ export function useContactReveal() {
         setRevealed(true);
         return contact;
       } catch (e: any) {
-        if (String(e?.message ?? "").includes("upgrade_required")) {
+        const message = String(e?.message ?? "");
+        if (message.includes("auth_required")) {
+          setError("auth_required");
+          window.dispatchEvent(
+            new CustomEvent("smp:toast", { detail: { type: "error", message: "Please sign in to reveal contact." } })
+          );
+          window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode: "login", reason: "contact" } }));
+        } else if (message.includes("upgrade_required")) {
           setError("upgrade_required");
+          window.dispatchEvent(
+            new CustomEvent("smp:toast", { detail: { type: "error", message: "Upgrade required to view seller contact." } })
+          );
+          try {
+            const url = "/pricing?reason=contact";
+            window.history.pushState({}, "", url);
+            window.dispatchEvent(new Event("smp:navigate"));
+          } catch {
+            window.location.href = "/pricing?reason=contact";
+          }
         } else {
           console.error("useContactReveal: reveal failed", e);
           setError(e?.message ?? "Failed to reveal contact.");

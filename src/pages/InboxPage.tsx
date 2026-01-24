@@ -235,13 +235,16 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
       const bizMap: Record<string, { businessName: string }> = {};
       try {
         const { data: pubRows } = await supabase
-          .from("public_profiles")
-          .select("user_id,display_name")
-          .in("user_id", uniq);
+          .from("profiles")
+          .select("id,display_name,full_name,first_name,last_name")
+          .in("id", uniq);
         for (const row of pubRows || []) {
-          const id = safeStr((row as any).user_id);
+          const id = safeStr((row as any).id);
           if (!id) continue;
-          const displayName = safeStr((row as any).display_name);
+          const displayName =
+            safeStr((row as any).display_name) ||
+            safeStr((row as any).full_name) ||
+            [safeStr((row as any).first_name), safeStr((row as any).last_name)].filter(Boolean).join(" ").trim();
           profMap[id] = { displayName };
         }
         const { data: bizRows } = await supabase

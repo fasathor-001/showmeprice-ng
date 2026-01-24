@@ -120,7 +120,7 @@ function verificationLabelFor(product: ProductWithRelations) {
   if ((product as any)?.seller_is_verified === true) return "Verified";
   const tier = String((product as any)?.seller_verification_tier ?? "").toLowerCase();
   if (tier === "verified") return "Verified";
-  return "Unverified";
+  return "";
 }
 
 function businessNameFor(product: ProductWithRelations) {

@@ -239,7 +239,7 @@ export default function MyShopPage() {
           .select(
             "id,user_id,business_name,business_type,description,verification_tier,verification_status,state_id,city,address,whatsapp_number,phone_number,links,created_at,updated_at"
           )
-          .eq("user_id", user.id)
+          .or(`owner_id.eq.${user.id},user_id.eq.${user.id}`)
           .limit(1);
 
         if (!alive) return;
