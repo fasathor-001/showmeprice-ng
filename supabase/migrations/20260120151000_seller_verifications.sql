@@ -18,31 +18,25 @@ create table if not exists public.seller_verifications (
   social_links jsonb,
   updated_at timestamptz not null default now()
 );
-
 create unique index if not exists seller_verifications_seller_id_key
   on public.seller_verifications (seller_id);
-
 alter table public.seller_verifications enable row level security;
-
 drop policy if exists seller_verifications_select_own on public.seller_verifications;
 create policy seller_verifications_select_own
   on public.seller_verifications
   for select
   using (auth.uid() = seller_id);
-
 drop policy if exists seller_verifications_insert_own on public.seller_verifications;
 create policy seller_verifications_insert_own
   on public.seller_verifications
   for insert
   with check (auth.uid() = seller_id and status = 'pending');
-
 drop policy if exists seller_verifications_update_own on public.seller_verifications;
 create policy seller_verifications_update_own
   on public.seller_verifications
   for update
   using (auth.uid() = seller_id)
   with check (auth.uid() = seller_id and status = 'pending');
-
 drop policy if exists seller_verifications_admin_select on public.seller_verifications;
 create policy seller_verifications_admin_select
   on public.seller_verifications
@@ -50,7 +44,6 @@ create policy seller_verifications_admin_select
   using (exists (
     select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true
   ));
-
 drop policy if exists seller_verifications_admin_update on public.seller_verifications;
 create policy seller_verifications_admin_update
   on public.seller_verifications
@@ -61,5 +54,4 @@ create policy seller_verifications_admin_update
   with check (exists (
     select 1 from public.profiles p where p.id = auth.uid() and p.is_admin = true
   ));
-
 notify pgrst, 'reload schema';

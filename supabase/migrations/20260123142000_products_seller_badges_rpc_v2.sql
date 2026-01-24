@@ -30,5 +30,4 @@ as $$
   left join public.profiles p on p.id = b.owner_id
   where b.owner_id = any(ids);
 $$;
-
 grant execute on function public.public_get_seller_badges(uuid[]) to anon, authenticated;

@@ -110,5 +110,4 @@ begin
   end if;
   create index if not exists messages_created_at_idx on public.messages(created_at desc);
 end $$;
-
 select pg_notify('pgrst', 'reload schema');

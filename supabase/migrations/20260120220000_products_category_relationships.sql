@@ -33,7 +33,6 @@ begin
     end if;
   end if;
 end $$;
-
 do $$
 begin
   if not exists (
@@ -60,5 +59,4 @@ begin
     end if;
   end if;
 end $$;
-
 select pg_notify('pgrst', 'reload schema');

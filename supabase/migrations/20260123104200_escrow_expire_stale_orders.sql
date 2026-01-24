@@ -65,7 +65,6 @@ begin
   end;
 end;
 $$;
-
 create index if not exists escrow_orders_initialized_created_at_idx
   on public.escrow_orders (created_at)
   where status = 'initialized' and paid_at is null;

@@ -42,7 +42,6 @@ begin
   return new;
 end;
 $$;
-
 drop trigger if exists on_auth_user_created on auth.users;
 drop trigger if exists smp_on_auth_user_created on auth.users;
 create trigger smp_on_auth_user_created

@@ -2,9 +2,7 @@
 
 drop trigger if exists on_auth_user_created on auth.users;
 drop trigger if exists smp_on_auth_user_created on auth.users;
-
 drop function if exists public.handle_new_user() cascade;
-
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -49,11 +47,9 @@ begin
   return new;
 end;
 $$;
-
 create trigger smp_on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
-
 -- Verification SQL (run in Supabase SQL editor)
 -- select tgname
 -- from pg_trigger
@@ -63,4 +59,4 @@ create trigger smp_on_auth_user_created
 -- select id, full_name, display_name, user_type, created_at
 -- from public.profiles
 -- order by created_at desc
--- limit 5;
+-- limit 5;;

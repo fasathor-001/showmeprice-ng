@@ -38,5 +38,4 @@ begin
 
   create index if not exists businesses_state_id_idx on public.businesses(state_id);
 end $$;
-
 select pg_notify('pgrst','reload schema');

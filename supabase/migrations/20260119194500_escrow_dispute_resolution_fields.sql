@@ -6,5 +6,4 @@ alter table public.escrow_orders
   add column if not exists resolution text,
   add column if not exists released_at timestamptz,
   add column if not exists refunded_at timestamptz;
-
 notify pgrst, 'reload schema';

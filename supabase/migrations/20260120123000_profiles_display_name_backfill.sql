@@ -1,10 +1,8 @@
 alter table public.profiles
   add column if not exists display_name text;
-
 update public.profiles
 set display_name = coalesce(nullif(display_name,''), nullif(full_name,''), nullif(business_name,''), nullif(username,''))
 where display_name is null or display_name = '';
-
 update public.profiles
 set display_name =
   case
@@ -13,5 +11,4 @@ set display_name =
     else 'User ' || left(id::text, 6)
   end
 where display_name is null or display_name = '';
-
 notify pgrst, 'reload schema';

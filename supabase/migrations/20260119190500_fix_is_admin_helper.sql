@@ -35,5 +35,4 @@ BEGIN
     $func$;
   END IF;
 END $$;
-
 NOTIFY pgrst, 'reload schema';

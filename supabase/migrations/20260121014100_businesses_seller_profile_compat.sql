@@ -74,7 +74,6 @@ begin
   update public.businesses set user_id = owner_id where user_id is null and owner_id is not null;
   update public.businesses set owner_id = user_id where owner_id is null and user_id is not null;
 end $$;
-
 create or replace function public.smp_sync_business_owner_user()
 returns trigger
 language plpgsql
@@ -88,7 +87,6 @@ begin
   end if;
   return new;
 end $$;
-
 do $$
 begin
   if not exists (
@@ -99,7 +97,6 @@ begin
       for each row execute function public.smp_sync_business_owner_user();
   end if;
 end $$;
-
 do $$
 begin
   if not exists (
@@ -120,7 +117,6 @@ begin
       on delete cascade;
   end if;
 end $$;
-
 do $$
 begin
   if not exists (
@@ -139,5 +135,4 @@ begin
     end if;
   end if;
 end $$;
-
 select pg_notify('pgrst', 'reload schema');

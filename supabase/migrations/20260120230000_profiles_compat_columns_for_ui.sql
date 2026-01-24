@@ -3,31 +3,22 @@
 
 alter table public.profiles
   add column if not exists display_name text;
-
 alter table public.profiles
   add column if not exists username text;
-
 alter table public.profiles
   add column if not exists user_type text;
-
 alter table public.profiles
   add column if not exists is_admin boolean not null default false;
-
 alter table public.profiles
   add column if not exists membership_tier text not null default 'free';
-
 alter table public.profiles
   add column if not exists business_name text;
-
 alter table public.profiles
   add column if not exists phone text;
-
 alter table public.profiles
   add column if not exists city text;
-
 alter table public.profiles
   add column if not exists address text;
-
 -- state_id is referenced by the frontend; align type with public.states(id) if states exists
 do $$
 declare st_id_type text;
@@ -67,6 +58,5 @@ begin
     execute 'alter table public.profiles add column if not exists state_id text';
   end if;
 end $$;
-
 -- Refresh PostgREST schema cache
 select pg_notify('pgrst', 'reload schema');

@@ -7,16 +7,13 @@ begin
   return new;
 end;
 $$ language plpgsql;
-
 drop trigger if exists trg_prevent_paid_escrow_regression on public.escrow_orders;
 create trigger trg_prevent_paid_escrow_regression
   before update on public.escrow_orders
   for each row
   execute function prevent_paid_escrow_regression();
-
 create unique index if not exists escrow_events_unique_type_order
   on public.escrow_events (escrow_order_id, type);
-
 create or replace view admin_escrow_health as
 select
   eo.id,

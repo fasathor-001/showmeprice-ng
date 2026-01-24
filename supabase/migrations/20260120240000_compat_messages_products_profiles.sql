@@ -2,7 +2,6 @@
 -- Add compatibility columns + minimal RLS so current frontend queries work on the fresh DB.
 
 create extension if not exists "pgcrypto";
-
 -- -------------------------------------------------------------------
 -- 1) MESSAGES: frontend expects messages.receiver_id and messages.read_at
 -- -------------------------------------------------------------------
@@ -22,25 +21,18 @@ begin
     );
   end if;
 end $$;
-
 alter table public.messages
   add column if not exists sender_id uuid;
-
 alter table public.messages
   add column if not exists receiver_id uuid;
-
 alter table public.messages
   add column if not exists read_at timestamptz;
-
 alter table public.messages
   add column if not exists created_at timestamptz not null default now();
-
 alter table public.messages
   add column if not exists body text;
-
 alter table public.messages
   add column if not exists product_id uuid;
-
 -- Backfill receiver_id/sender_id from common legacy column names if present
 do $$
 begin
@@ -72,15 +64,11 @@ begin
     update public.messages set sender_id = sender where sender_id is null;
   end if;
 end $$;
-
 create index if not exists messages_receiver_read_idx
   on public.messages (receiver_id, read_at);
-
 create index if not exists messages_sender_created_idx
   on public.messages (sender_id, created_at desc);
-
 alter table public.messages enable row level security;
-
 do $$
 begin
   create policy "messages_select_own"
@@ -90,7 +78,6 @@ begin
     using (sender_id = auth.uid() or receiver_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy "messages_insert_sender"
@@ -100,7 +87,6 @@ begin
     with check (sender_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy "messages_update_own"
@@ -111,16 +97,13 @@ begin
     with check (sender_id = auth.uid() or receiver_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 grant select, insert, update on public.messages to authenticated;
-
 -- -------------------------------------------------------------------
 -- 2) PROFILES: frontend is doing upsert POST /profiles?on_conflict=id (403 now)
 --    Fix by adding insert policy (and ensure update policy exists)
 -- -------------------------------------------------------------------
 
 alter table public.profiles enable row level security;
-
 do $$
 begin
   create policy "profiles_select_own"
@@ -130,7 +113,6 @@ begin
     using (id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy "profiles_insert_own"
@@ -140,7 +122,6 @@ begin
     with check (id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy "profiles_update_own"
@@ -151,9 +132,7 @@ begin
     with check (id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 grant select, insert, update on public.profiles to authenticated;
-
 -- -------------------------------------------------------------------
 -- 3) PRODUCTS/BUSINESSES: fix common 400s from missing selected columns
 --    Your frontend query references:
@@ -163,7 +142,6 @@ grant select, insert, update on public.profiles to authenticated;
 
 alter table public.products
   add column if not exists is_deal boolean not null default false;
-
 do $$
 begin
   if to_regclass('public.businesses') is not null then
@@ -171,6 +149,5 @@ begin
     alter table public.businesses add column if not exists verification_status text;
   end if;
 end $$;
-
 -- Refresh PostgREST schema cache
 select pg_notify('pgrst', 'reload schema');

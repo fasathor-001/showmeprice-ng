@@ -52,11 +52,8 @@ begin
     end if;
   end if;
 end $$;
-
 create or replace view public.escrow_transactions as
 select * from public.escrow_orders;
-
 grant select on public.escrow_transactions to authenticated;
 grant select on public.escrow_transactions to anon;
-
 select pg_notify('pgrst', 'reload schema');

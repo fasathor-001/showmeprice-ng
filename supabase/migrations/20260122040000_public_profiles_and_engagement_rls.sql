@@ -2,7 +2,6 @@
 -- Safe public profiles surface + engagement visibility for sellers.
 
 create extension if not exists "pgcrypto";
-
 create table if not exists public.public_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   display_name text,
@@ -10,9 +9,7 @@ create table if not exists public.public_profiles (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 alter table public.public_profiles enable row level security;
-
 do $$
 begin
   create policy public_profiles_read_auth
@@ -22,7 +19,6 @@ begin
     using (true);
 exception when duplicate_object then null;
 end $$;
-
 do $$
 declare
   avatar_expr text;
@@ -71,7 +67,6 @@ begin
       updated_at = now()
   $sql$, avatar_expr);
 end $$;
-
 create or replace function public.sync_public_profile()
 returns trigger
 language plpgsql
@@ -103,7 +98,6 @@ begin
   return new;
 end;
 $$;
-
 do $$
 begin
   if not exists (
@@ -115,7 +109,6 @@ begin
       execute function public.sync_public_profile();
   end if;
 end $$;
-
 -- Ensure FK relationships to public.public_profiles for PostgREST embeds
 do $$
 begin
@@ -159,13 +152,11 @@ begin
     create index if not exists business_follows_user_id_idx on public.business_follows(user_id);
   end if;
 end $$;
-
 -- RLS policies for engagement visibility
 alter table public.product_views enable row level security;
 alter table public.product_saves enable row level security;
 alter table public.business_follows enable row level security;
 alter table public.product_comments enable row level security;
-
 do $$
 begin
   create policy product_views_insert_auth
@@ -173,7 +164,6 @@ begin
     with check (viewer_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_views_select_owner_or_seller
@@ -192,7 +182,6 @@ begin
     );
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_saves_select_own
@@ -200,7 +189,6 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_saves_insert_own
@@ -208,7 +196,6 @@ begin
     with check (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_saves_delete_own
@@ -216,7 +203,6 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_saves_select_seller
@@ -233,7 +219,6 @@ begin
     );
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy business_follows_select_own
@@ -241,7 +226,6 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy business_follows_insert_own
@@ -249,7 +233,6 @@ begin
     with check (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy business_follows_delete_own
@@ -257,7 +240,6 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy business_follows_select_seller
@@ -265,7 +247,6 @@ begin
     using (business_id in (select id from public.businesses where user_id = auth.uid()));
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_comments_select_auth
@@ -273,7 +254,6 @@ begin
     using (true);
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_comments_insert_own
@@ -281,7 +261,6 @@ begin
     with check (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_comments_update_own
@@ -290,7 +269,6 @@ begin
     with check (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_comments_delete_own
@@ -298,5 +276,4 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 select pg_notify('pgrst', 'reload schema');

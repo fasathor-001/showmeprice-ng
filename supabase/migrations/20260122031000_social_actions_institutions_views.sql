@@ -2,7 +2,6 @@
 -- Social actions + institutions + product views (idempotent)
 
 create extension if not exists pgcrypto;
-
 -- Institutions
 create table if not exists public.institutions (
   id uuid primary key default gen_random_uuid(),
@@ -12,9 +11,7 @@ create table if not exists public.institutions (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-
 alter table public.institutions enable row level security;
-
 do $$
 begin
   create policy institutions_select_own
@@ -23,7 +20,6 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy institutions_insert_own
@@ -32,7 +28,6 @@ begin
     with check (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy institutions_update_own
@@ -42,7 +37,6 @@ begin
     with check (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 -- Product views
 create table if not exists public.product_views (
   id bigserial primary key,
@@ -50,11 +44,8 @@ create table if not exists public.product_views (
   viewer_id uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
-
 create index if not exists product_views_product_id_idx on public.product_views(product_id);
-
 alter table public.product_views enable row level security;
-
 do $$
 begin
   create policy product_views_insert_anon
@@ -63,7 +54,6 @@ begin
     with check (viewer_id is null);
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_views_insert_auth
@@ -72,7 +62,6 @@ begin
     with check (viewer_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 -- Product saves (wishlist)
 create table if not exists public.product_saves (
   id uuid primary key default gen_random_uuid(),
@@ -81,9 +70,7 @@ create table if not exists public.product_saves (
   created_at timestamptz not null default now(),
   constraint product_saves_user_product_key unique (user_id, product_id)
 );
-
 alter table public.product_saves enable row level security;
-
 do $$
 begin
   create policy product_saves_select
@@ -92,7 +79,6 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_saves_insert
@@ -101,7 +87,6 @@ begin
     with check (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_saves_delete
@@ -110,7 +95,6 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 -- Business follows
 create table if not exists public.business_follows (
   id uuid primary key default gen_random_uuid(),
@@ -119,9 +103,7 @@ create table if not exists public.business_follows (
   created_at timestamptz not null default now(),
   constraint business_follows_user_business_key unique (user_id, business_id)
 );
-
 alter table public.business_follows enable row level security;
-
 do $$
 begin
   create policy business_follows_select
@@ -130,7 +112,6 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy business_follows_insert
@@ -139,7 +120,6 @@ begin
     with check (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy business_follows_delete
@@ -148,7 +128,6 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 -- Product comments (ensure exists)
 create table if not exists public.product_comments (
   id uuid primary key default gen_random_uuid(),
@@ -157,9 +136,7 @@ create table if not exists public.product_comments (
   body text not null,
   created_at timestamptz not null default now()
 );
-
 alter table public.product_comments enable row level security;
-
 do $$
 begin
   create policy product_comments_select
@@ -168,7 +145,6 @@ begin
     using (true);
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_comments_insert
@@ -177,7 +153,6 @@ begin
     with check (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 do $$
 begin
   create policy product_comments_delete
@@ -186,5 +161,4 @@ begin
     using (user_id = auth.uid());
 exception when duplicate_object then null;
 end $$;
-
 select pg_notify('pgrst', 'reload schema');

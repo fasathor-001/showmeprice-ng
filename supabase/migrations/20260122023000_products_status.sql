@@ -3,17 +3,13 @@
 
 alter table public.products
   add column if not exists status text;
-
 alter table public.products
   alter column status set default 'active';
-
 update public.products
 set status = 'active'
 where status is null;
-
 alter table public.products
   alter column status set not null;
-
 do $$
 begin
   if not exists (
@@ -27,5 +23,4 @@ begin
       check (status in ('active','sold'));
   end if;
 end $$;
-
 select pg_notify('pgrst', 'reload schema');

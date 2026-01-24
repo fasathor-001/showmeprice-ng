@@ -3,13 +3,11 @@
 
 alter table public.products
   add column if not exists seller_business_name text;
-
 update public.products p
 set seller_business_name = b.business_name
 from public.businesses b
 where p.business_id = b.id
   and (p.seller_business_name is null or p.seller_business_name = '');
-
 create or replace function public.set_products_seller_business_name()
 returns trigger
 language plpgsql
@@ -24,7 +22,6 @@ begin
   return new;
 end;
 $$;
-
 do $$
 begin
   if not exists (
@@ -37,5 +34,4 @@ begin
     execute function public.set_products_seller_business_name();
   end if;
 end $$;
-
 select pg_notify('pgrst', 'reload schema');

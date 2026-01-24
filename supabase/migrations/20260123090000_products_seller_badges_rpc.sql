@@ -12,5 +12,4 @@ as $$
   from public.businesses b
   where b.owner_id = any(owner_ids);
 $$;
-
 grant execute on function public.public_get_seller_badges(uuid[]) to anon, authenticated;

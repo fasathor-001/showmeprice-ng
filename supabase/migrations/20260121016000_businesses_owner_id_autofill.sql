@@ -7,7 +7,6 @@ begin
     raise exception 'public.businesses does not exist';
   end if;
 end $$;
-
 create or replace function public.smp_businesses_owner_autofill()
 returns trigger
 language plpgsql
@@ -27,7 +26,6 @@ begin
   return new;
 end
 $$;
-
 do $$
 begin
   if exists (

@@ -14,7 +14,6 @@ begin
   return new;
 end;
 $$;
-
 do $$
 begin
   if not exists (
@@ -26,5 +25,4 @@ begin
     execute function public.sync_products_seller_business_name();
   end if;
 end $$;
-
 select pg_notify('pgrst', 'reload schema');
