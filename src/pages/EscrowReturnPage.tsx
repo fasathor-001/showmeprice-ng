@@ -15,15 +15,18 @@ export default function EscrowReturnPage() {
   const [timedOut, setTimedOut] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [needsLogin, setNeedsLogin] = useState(false);
+  const [lastReference, setLastReference] = useState<string>("");
   const inFlight = useRef(false);
 
   const reference =
     typeof window !== "undefined"
-      ? String(
-          new URLSearchParams(window.location.search).get("reference") ||
-            new URLSearchParams(window.location.search).get("trxref") ||
-            ""
-        ).trim()
+      ? (() => {
+          const params = new URLSearchParams(window.location.search);
+          const refs = params.getAll("reference").filter(Boolean);
+          const trxrefs = params.getAll("trxref").filter(Boolean);
+          const ref = refs.length ? refs[refs.length - 1] : trxrefs[trxrefs.length - 1] || "";
+          return String(ref).trim();
+        })()
       : "";
 
   const verifyNow = useCallback(async () => {
@@ -38,6 +41,7 @@ export default function EscrowReturnPage() {
     setChecking(true);
     setError(null);
     setNeedsLogin(false);
+    setLastReference(reference);
 
     try {
       const callVerify = async (accessToken: string) => {
@@ -74,17 +78,23 @@ export default function EscrowReturnPage() {
       }
 
       if (!resp.ok) {
+        if (resp.status >= 500) return "server_error";
         throw new Error((data as any)?.error || "Failed to verify payment.");
       }
 
       const ok = Boolean((data as any)?.ok);
       const verifyStatus = String((data as any)?.status ?? "").toLowerCase();
-      if (ok && verifyStatus === "success") {
+      if (ok && (verifyStatus === "success" || verifyStatus === "funded")) {
         setConfirmed(true);
         setStatus("Payment confirmed.");
         return true;
       }
+      if (verifyStatus === "abandoned" || verifyStatus === "failed") {
+        setStatus("Payment not completed.");
+        return false;
+      }
 
+      setStatus("Payment pending confirmation.");
       return false;
     } catch (e: any) {
       setError(e?.message ?? "Failed to verify payment.");
@@ -100,6 +110,8 @@ export default function EscrowReturnPage() {
     let cancelled = false;
     const maxAttempts = 20;
     const intervalMs = 1500;
+    const serverRetryDelays = [800, 1500, 2500];
+    let serverRetries = 0;
 
     if (!reference) {
       setError("Missing payment reference.");
@@ -115,7 +127,19 @@ export default function EscrowReturnPage() {
     const run = async () => {
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
         if (cancelled) return;
-        const funded = await verifyNow();
+        const result = await verifyNow();
+        if (result === "server_error") {
+          if (serverRetries < serverRetryDelays.length) {
+            const delay = serverRetryDelays[serverRetries];
+            serverRetries += 1;
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
+          setStatus("Still confirming payment…");
+          setTimedOut(true);
+          return;
+        }
+        const funded = result === true;
         if (funded) return;
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
       }
@@ -226,7 +250,21 @@ export default function EscrowReturnPage() {
           </div>
         </div>
       ) : null}
+      {!confirmed && !timedOut && reference ? (
+        <div className="mt-4 text-sm text-slate-600">
+          <button
+            type="button"
+            onClick={() => nav("/escrow")}
+            className="px-3 py-2 rounded-lg border text-slate-700 font-semibold hover:bg-slate-50"
+          >
+            View Escrow Orders
+          </button>
+        </div>
+      ) : null}
       {error ? <div className="mt-4 text-sm text-rose-600">{error}</div> : null}
+      {lastReference ? (
+        <div className="mt-4 text-xs text-slate-400">Reference: {lastReference}</div>
+      ) : null}
     </div>
   );
 }

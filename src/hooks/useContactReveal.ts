@@ -1,11 +1,11 @@
-﻿import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useProfile } from "./useProfile";
 import { canBuyerRevealContact } from "../lib/plans";
 import { useFF } from "./useFF";
 
 export type SellerContact = {
-  whatsapp_number: string | null;
+  whatsapp: string | null;
   phone: string | null;
 };
 
@@ -39,12 +39,6 @@ export function useContactReveal() {
         return null;
       }
 
-      // Free users cannot reveal WhatsApp/Phone (but can still message)
-      if (!viewerPaid) {
-        setError("Upgrade required to view seller contact.");
-        return null;
-      }
-
       if (!whatsappEnabled && !phoneEnabled) {
         setError("Contact reveal is currently unavailable.");
         return null;
@@ -52,24 +46,21 @@ export function useContactReveal() {
 
       setLoading(true);
       try {
-        // ✅ FIXED: businesses uses user_id, whatsapp_number, phone_number
-        const { data: biz, error: bizErr } = await supabase
-          .from("businesses")
-          .select("whatsapp_number, phone_number")
-          .eq("user_id", sellerUserId)
-          .maybeSingle();
+        const { data: rpcData, error: rpcErr } = await supabase
+          .rpc("reveal_seller_contact", { seller_owner_id: sellerUserId });
 
-        if (bizErr) throw bizErr;
+        if (rpcErr) throw rpcErr;
 
-        const whatsapp = whatsappEnabled ? cleanPhone((biz as any)?.whatsapp_number) : "";
-        const phone = phoneEnabled ? cleanPhone((biz as any)?.phone_number) : "";
+        const row = Array.isArray(rpcData) ? rpcData[0] : rpcData;
+        const whatsapp = whatsappEnabled ? cleanPhone((row as any)?.whatsapp) : "";
+        const phone = phoneEnabled ? cleanPhone((row as any)?.phone) : "";
 
         const contact: SellerContact = {
-          whatsapp_number: whatsapp || null,
+          whatsapp: whatsapp || null,
           phone: phone || null,
         };
 
-        if (!contact.whatsapp_number && !contact.phone) {
+        if (!contact.whatsapp && !contact.phone) {
           setData(null);
           setRevealed(false);
           setError("Contact information unavailable.");
@@ -80,10 +71,14 @@ export function useContactReveal() {
         setRevealed(true);
         return contact;
       } catch (e: any) {
-        console.error("useContactReveal: reveal failed", e);
+        if (String(e?.message ?? "").includes("upgrade_required")) {
+          setError("upgrade_required");
+        } else {
+          console.error("useContactReveal: reveal failed", e);
+          setError(e?.message ?? "Failed to reveal contact.");
+        }
         setData(null);
         setRevealed(false);
-        setError(e?.message ?? "Failed to reveal contact.");
         return null;
       } finally {
         setLoading(false);

@@ -31,7 +31,9 @@ serve(async (req) => {
   const serviceRoleKey =
     Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const paystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
-  const siteUrl = Deno.env.get("SITE_URL") ?? "";
+  const origin = req.headers.get("origin") ?? "";
+  const referer = req.headers.get("referer") ?? "";
+  const siteUrl = Deno.env.get("SITE_URL") ?? origin ?? referer ?? "";
 
   if (!serviceRoleKey) {
     return jsonResponse(500, { error: "Missing SERVICE_ROLE_KEY secret" });
@@ -153,7 +155,7 @@ serve(async (req) => {
       email: buyer.email ?? "",
       amount: totalKobo,
       reference,
-      callback_url: `${siteUrl.replace(/\/+$/, "")}/escrow/callback`,
+      callback_url: `${siteUrl.replace(/\/+$/, "")}/escrow/return`,
       metadata: {
         escrow_order_id: orderRow.id,
         product_id: productId,

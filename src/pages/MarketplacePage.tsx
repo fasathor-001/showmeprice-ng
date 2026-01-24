@@ -118,11 +118,8 @@ function getProductImages(product: any): string[] {
 
 function verificationLabelFor(product: ProductWithRelations) {
   if ((product as any)?.seller_is_verified === true) return "Verified";
-  const tier = String((product as any)?.businesses?.verification_tier ?? "").toLowerCase();
-  const status = String((product as any)?.businesses?.verification_status ?? "").toLowerCase();
-  if (status === "verified" || status === "approved" || tier === "verified" || tier === "premium") return "Verified";
-  if (status === "pending") return "Pending";
-  if (status === "rejected") return "Rejected";
+  const tier = String((product as any)?.seller_verification_tier ?? "").toLowerCase();
+  if (tier === "verified") return "Verified";
   return "Unverified";
 }
 

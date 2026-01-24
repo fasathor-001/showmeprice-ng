@@ -7,7 +7,7 @@ import { useContactReveal } from "../../hooks/useContactReveal";
 import { supabase } from "../../lib/supabase";
 import { useProfile } from "../../hooks/useProfile";
 import { useFF } from "../../hooks/useFF";
-import { canBuyerRevealContact, canBuyerUseEscrow, getUserTier } from "../../lib/plans";
+import { canBuyerUseEscrow, getUserTier } from "../../lib/plans";
 import { calcEscrowFeeKobo, formatNairaFromKobo } from "../../lib/escrowFee";
 import { getAccountStatus } from "../../lib/userRole";
 import { useProductLike } from "../../hooks/useProductLike";
@@ -84,6 +84,10 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   // Viewer access
   const { profile: viewerProfile, loading: profileLoading } = useProfile() as any;
   const viewerTier = getUserTier(viewerProfile);
+  const buyerTier = String(
+    (viewerProfile as any)?.membership_tier ?? (viewerProfile as any)?.membership_1 ?? (viewerTier as any) ?? "free"
+  ).toLowerCase();
+  const isBuyerPremium = buyerTier === "premium";
 
   // Access rule:
   // Premium - WhatsApp + Phone + INAPP MESSENGER
@@ -91,7 +95,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   // Free    - INAPP MESSENGER only
   const messagingEnabled = !!FF.messaging;
   const canInAppMessage = messagingEnabled; // server-side enforcement still required; UI gate here
-  const canRevealContact = canBuyerRevealContact(viewerProfile);
+  const canRevealContact = buyerTier === "pro" || buyerTier === "premium";
   const escrowEnabled = !!FF?.isEnabled?.("escrow_enabled", false);
   const escrowEligible = canBuyerUseEscrow(viewerProfile, escrowEnabled);
   const showEscrow = escrowEnabled;
@@ -108,7 +112,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   const isInstitutionBuyer = viewerTier === "institution";
 
   const { institution, addToProcurement } = useInstitution();
-  const { reveal, data: contactData, loading: revealLoading, revealed } = useContactReveal();
+  const { reveal, data: contactData, loading: revealLoading, revealed, error: revealError } = useContactReveal();
 
   // --- core product fields (safe)
   const productId = (product as any)?.id;
@@ -171,32 +175,20 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   }, [productId, sellerUserId, user?.id]);
 
 
-  const tier = (product as any)?.businesses?.verification_tier || "basic";
-  const verificationStatus = String((product as any)?.businesses?.verification_status ?? "").toLowerCase();
-  const sellerBadgeFlag = (product as any)?.seller_is_verified === true;
-  const sellerBadgeTier = String((product as any)?.seller_verification_tier ?? "").toLowerCase();
+  const tier = String(
+    (product as any)?.seller_verification_tier ??
+      (product as any)?.seller_verification_status ??
+      (product as any)?.verification_tier ??
+      (product as any)?.verification_status ??
+      ""
+  ).toLowerCase();
   const isSellerVerified =
-    sellerBadgeFlag ||
-    sellerBadgeTier === "verified" ||
-    verificationStatus === "verified" ||
-    verificationStatus === "approved" ||
-    tier === "verified" ||
-    tier === "premium";
-  const isSellerPending = verificationStatus === "pending" || verificationStatus === "in review";
-  const isSellerRejected = verificationStatus === "rejected";
-  const verificationTone = isSellerVerified
-    ? "text-emerald-600"
-    : isSellerPending
-    ? "text-amber-600"
-    : "text-red-600";
-  const isSellerPremium = tier === "premium";
-  const sellerBadgeLabel = isSellerVerified
-    ? "Verified"
-    : isSellerPending
-    ? "Pending verification"
-    : isSellerRejected
-    ? "Rejected"
-    : "Unverified";
+    (product as any)?.seller_is_verified === true || tier === "verified";
+  const verificationTone = isSellerVerified ? "text-emerald-600" : "text-red-600";
+  const sellerBadgeLabel = isSellerVerified ? "Verified" : "Unverified";
+  const sellerMembershipTier = String((product as any)?.seller_membership_tier ?? "").toLowerCase();
+  const isSellerPremium = sellerMembershipTier === "premium";
+  const isSellerPro = sellerMembershipTier === "pro";
 
   // discount
   const hasDiscount = !!originalPrice && Number(originalPrice) > Number(price);
@@ -309,6 +301,19 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
     }
   };
 
+  const revealUpgradeHandledRef = useRef(false);
+  useEffect(() => {
+    if (!revealError) {
+      revealUpgradeHandledRef.current = false;
+      return;
+    }
+    if (!String(revealError).includes("upgrade_required")) return;
+    if (revealUpgradeHandledRef.current) return;
+    revealUpgradeHandledRef.current = true;
+    emitToast("error", "Upgrade required to view seller contact.");
+    openPricing("contact");
+  }, [revealError]);
+
   const setPostAuthIntent = (intent: string) => {
     try {
       sessionStorage.setItem("smp:post_auth_intent", intent);
@@ -381,8 +386,12 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   };
 
   const handleReveal = async () => {
-    if (!sellerUserId) return;
-    await reveal(String(sellerUserId));
+    const targetId =
+      safeText((product as any)?.owner_id) ||
+      safeText((product as any)?.seller_id) ||
+      safeText(sellerUserId);
+    if (!targetId) return;
+    await reveal(String(targetId));
   };
 
   const handleCall = () => {
@@ -391,7 +400,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   };
 
   const handleWhatsApp = () => {
-    const wa = contactData?.whatsapp_number || contactData?.phone;
+    const wa = contactData?.whatsapp || contactData?.phone;
     if (!wa) return;
 
     const cleanNum = String(wa).replace(/\D/g, "");
@@ -796,9 +805,10 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                   </span>
                 ) : null}
 
-                {isSellerPremium ? (
+                {isSellerPremium || isSellerPro ? (
                   <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-bold uppercase rounded tracking-wider border border-amber-200 flex items-center gap-1">
-                    <Crown className="w-3 h-3 fill-amber-700 text-amber-700" /> Premium Seller
+                    <Crown className="w-3 h-3 fill-amber-700 text-amber-700" />{" "}
+                    {isSellerPremium ? "Premium Seller" : "Pro Seller"}
                   </span>
                 ) : null}
 

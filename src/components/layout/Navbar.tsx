@@ -368,6 +368,12 @@ export default function Navbar() {
   ).trim();
   const emailPrefix = String(authUser?.email ?? "").split("@")[0] || "";
   const displayName = rawName || emailPrefix || "Account";
+  const verificationTier = profileReady
+    ? String((business as any)?.verification_tier || "")
+        .trim()
+        .toLowerCase()
+    : "";
+  const isVerifiedByTier = verificationTier === "verified" || verificationTier === "premium";
   let verificationRaw = profileReady
     ? String(
         (profile as any)?.seller_verification_status ||
@@ -377,6 +383,7 @@ export default function Navbar() {
         .trim()
         .toLowerCase()
     : "";
+  if (isVerifiedByTier) verificationRaw = "verified";
   if (isSeller && !verificationRaw) verificationRaw = "unverified";
   const verificationLabel =
     verificationRaw === "verified" || verificationRaw === "approved"
