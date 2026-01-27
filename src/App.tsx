@@ -22,6 +22,8 @@ import SellerEngagementPage from "./pages/SellerEngagementPage";
 import InboxPage from "./pages/InboxPage";
 import SavedPage from "./pages/SavedPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import MyOffersPage from "./pages/MyOffersPage";
+import OffersInboxPage from "./pages/OffersInboxPage";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminFeaturesPage from "./pages/AdminFeaturesPage";
 import AdminApprovalsPage from "./pages/admin/AdminApprovalsPage";
@@ -80,6 +82,8 @@ export default function App() {
   const [isSellerAccount, setIsSellerAccount] = useState<boolean>(false);
   const authRouteHandledRef = useRef<string | null>(null);
 
+  const offersEnabled = !!FF?.isEnabled?.("make_offer_enabled", false);
+
   // Route aliases and redirects (avoid calling smpNavigate during render)
   useEffect(() => {
     let target: string | null = null;
@@ -101,6 +105,15 @@ export default function App() {
       smpNavigate(target, { replace: true });
     }
   }, [path, isSellerAccount]);
+
+  useEffect(() => {
+    if (offersEnabled) return;
+    if (path === "/buyer/offers") {
+      smpNavigate("/dashboard", { replace: true });
+    } else if (path === "/seller/offers") {
+      smpNavigate("/my-shop", { replace: true });
+    }
+  }, [offersEnabled, path]);
 
   // ✅ CRITICAL: keep App in sync with URL changes (pushState/back/forward/menu clicks)
   useEffect(() => {
@@ -319,6 +332,22 @@ export default function App() {
       return (
         <AccountShell title="Notifications">
           <NotificationsPage />
+        </AccountShell>
+      );
+    }
+
+    if (path === "/buyer/offers") {
+      return (
+        <AccountShell title="Offers">
+          <MyOffersPage />
+        </AccountShell>
+      );
+    }
+
+    if (path === "/seller/offers") {
+      return (
+        <AccountShell title="Offers">
+          <OffersInboxPage />
         </AccountShell>
       );
     }

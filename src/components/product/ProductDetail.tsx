@@ -15,6 +15,7 @@ import { useSellerFollow } from "../../hooks/useSellerFollow";
 import { useProductComments } from "../../hooks/useProductComments";
 import { useReportProduct } from "../../hooks/useReportProduct";
 import { getAccessToken } from "../../lib/getAccessToken";
+import { invokeAuthedFunction } from "../../lib/invokeAuthedFunction";
 import FeatureGate from "../common/FeatureGate";
 import SEO from "../common/SEO";
 
@@ -238,6 +239,10 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
   const [escrowStarting, setEscrowStarting] = useState(false);
   const [escrowError, setEscrowError] = useState<string | null>(null);
+  const [offerOpen, setOfferOpen] = useState(false);
+  const [offerSending, setOfferSending] = useState(false);
+  const [offerAmount, setOfferAmount] = useState("");
+  const [offerNote, setOfferNote] = useState("");
 
   // Social hooks
   const { liked, count: likeCount, mutating: likeMutating, toggleLike } = useProductLike(productId);
@@ -301,6 +306,8 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
       window.location.href = reason ? `/pricing?reason=${encodeURIComponent(reason)}` : "/pricing";
     }
   };
+
+  const offersEnabled = !!FF?.isEnabled?.("make_offer_enabled", false);
 
   const setPostAuthIntent = (intent: string) => {
     try {
@@ -371,6 +378,50 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
         })
       );
     }, "message");
+  };
+
+  const handleMakeOfferClick = () => {
+    if (!offersEnabled) return;
+    requireAuthOr(() => setOfferOpen(true), "make_offer");
+  };
+
+  const handleOfferSend = async () => {
+    if (!user?.id) {
+      emitToast("info", "Please sign in to send offers.");
+      return;
+    }
+    if (!productId) {
+      emitToast("error", "Product is missing.");
+      return;
+    }
+    const amount = Number(String(offerAmount ?? "").replace(/[^\d.]/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      emitToast("info", "Enter a valid offer amount.");
+      return;
+    }
+    setOfferSending(true);
+    try {
+      const { data, error } = await invokeAuthedFunction("offer_create", {
+        body: {
+          productId: String(productId),
+          amount,
+          message: offerNote.trim() || null,
+          productTitle: title || null,
+          listedPriceKobo: Number(price ?? 0) > 0 ? Math.round(Number(price) * 100) : null,
+        },
+      });
+      if (error || !data) {
+        throw new Error((error as any)?.message ?? "Offer failed to send.");
+      }
+      emitToast("success", "Offer sent");
+      setOfferOpen(false);
+      setOfferAmount("");
+      setOfferNote("");
+    } catch (err: any) {
+      emitToast("error", err?.message ?? "Failed to send offer.");
+    } finally {
+      setOfferSending(false);
+    }
   };
 
   const handleReveal = async () => {
@@ -1109,6 +1160,15 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                       <MessageCircle className="w-4 h-4" />
                       Message Seller {user ? "" : "(Login Required)"}
                     </button>
+                    {offersEnabled && !isOwner ? (
+                      <button
+                        type="button"
+                        onClick={handleMakeOfferClick}
+                        className="w-full py-3 rounded-xl font-bold text-sm transition border flex items-center justify-center gap-2 bg-white text-slate-800 border-slate-200 hover:bg-slate-50"
+                      >
+                        Make Offer
+                      </button>
+                    ) : null}
 
                     <div className="grid grid-cols-2 gap-2">
                       <button
@@ -1190,6 +1250,58 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
           </div>
         </div>
       </div>
+
+      {offerOpen ? (
+        <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl">
+            <div className="text-lg font-black text-slate-900">Make an Offer</div>
+            <div className="text-xs text-slate-500 mt-1">
+              {title ? `Offer for ${title}` : "Send your offer to the seller."}
+            </div>
+
+            <div className="mt-4">
+              <label className="text-xs font-bold text-slate-600">Offer amount (₦)</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={offerAmount}
+                onChange={(e) => setOfferAmount(e.target.value)}
+                placeholder="e.g. 50,000"
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              />
+            </div>
+
+            <div className="mt-4">
+              <label className="text-xs font-bold text-slate-600">Note (optional)</label>
+              <textarea
+                value={offerNote}
+                onChange={(e) => setOfferNote(e.target.value)}
+                rows={3}
+                placeholder="Add a short note..."
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm resize-none"
+              />
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <button
+                type="button"
+                onClick={() => setOfferOpen(false)}
+                className="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 font-black text-sm hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleOfferSend}
+                disabled={offerSending}
+                className="flex-1 py-2 rounded-lg bg-emerald-600 text-white font-black text-sm hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {offerSending ? "Sending..." : "Send Offer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* REPORT OVERLAY */}
       {isReporting && (

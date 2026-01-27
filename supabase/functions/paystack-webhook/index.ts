@@ -62,6 +62,9 @@ serve(async (req) => {
   const type = String(evt?.event ?? "");
   const event_id = String(evt?.id ?? "");
   const reference = String(evt?.data?.reference ?? "");
+  const metadata = evt?.data?.metadata ?? {};
+  const isOfferEvent =
+    String(metadata?.kind ?? "").toLowerCase() === "offer" || reference.startsWith("offer_");
 
   console.log("paystack-webhook:event", { type, reference: reference || "" });
 
@@ -72,7 +75,7 @@ serve(async (req) => {
   // Resolve escrow order id (optional but useful)
   const { data: order } = await db
     .from("escrow_orders")
-    .select("id, status")
+    .select("id, status, total_kobo, paid_at")
     .eq("paystack_reference", reference)
     .maybeSingle();
 
@@ -96,12 +99,119 @@ serve(async (req) => {
 
   // Apply state transition only once
   if (type === "charge.success" && reference) {
+    if (isOfferEvent) {
+      const { data: payment } = await db
+        .from("offer_payments")
+        .select("id, offer_id, amount_kobo, status")
+        .eq("reference", reference)
+        .maybeSingle();
+
+      if (!payment?.id) return new Response("OK", { status: 200 });
+      if (String(payment.status ?? "") === "paid") return new Response("OK", { status: 200 });
+
+      try {
+        const verifyRes = await fetch(
+          `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+          { headers: { Authorization: `Bearer ${secret}` } }
+        );
+        const verifyJson = await verifyRes.json().catch(() => ({}));
+        if (!verifyRes.ok) return new Response("OK", { status: 200 });
+        const status = String(verifyJson?.data?.status ?? "");
+        const paidAmount = Number(verifyJson?.data?.amount ?? 0);
+        if (status !== "success") return new Response("OK", { status: 200 });
+        if (payment.amount_kobo && paidAmount && Number(payment.amount_kobo) !== paidAmount) {
+          console.error("paystack-webhook:offer amount mismatch", {
+            expected: payment.amount_kobo,
+            actual: paidAmount,
+          });
+          return new Response("OK", { status: 200 });
+        }
+      } catch (err) {
+        console.error("paystack-webhook:offer verify error", err);
+        return new Response("OK", { status: 200 });
+      }
+
+      const nowIso = new Date().toISOString();
+      await db
+        .from("offer_payments")
+        .update({ status: "paid", updated_at: nowIso })
+        .eq("id", payment.id);
+
+      const { data: offer } = await db
+        .from("offers")
+        .select("id, product_id, buyer_id, seller_id, amount, currency")
+        .eq("id", payment.offer_id)
+        .maybeSingle();
+
+      if (offer?.id) {
+        await db
+          .from("offers")
+          .update({ status: "paid", updated_at: nowIso })
+          .eq("id", offer.id);
+
+        const { data: existingOrder } = await db
+          .from("orders")
+          .select("id")
+          .eq("offer_id", offer.id)
+          .maybeSingle();
+
+        if (!existingOrder?.id) {
+          await db.from("orders").insert({
+            source: "offer",
+            offer_id: offer.id,
+            product_id: offer.product_id,
+            buyer_id: offer.buyer_id,
+            seller_id: offer.seller_id,
+            amount: offer.amount,
+            currency: offer.currency ?? "NGN",
+            status: "paid",
+          });
+        }
+      }
+
+      return new Response("OK", { status: 200 });
+    }
+
+    if (order?.paid_at || ["paid", "released", "refunded"].includes(String(order?.status ?? ""))) {
+      return new Response("OK", { status: 200 });
+    }
+
+    try {
+      const verifyRes = await fetch(
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+        {
+          headers: { Authorization: `Bearer ${secret}` },
+        }
+      );
+      const verifyJson = await verifyRes.json().catch(() => ({}));
+      if (!verifyRes.ok) {
+        console.error("paystack-webhook:verify failed", { status: verifyRes.status });
+        return new Response("OK", { status: 200 });
+      }
+
+      const status = String(verifyJson?.data?.status ?? "");
+      const paidAmount = Number(verifyJson?.data?.amount ?? 0);
+      if (status !== "success") {
+        return new Response("OK", { status: 200 });
+      }
+      if (order?.total_kobo && paidAmount && Number(order.total_kobo) !== paidAmount) {
+        console.error("paystack-webhook:amount mismatch", {
+          expected: order.total_kobo,
+          actual: paidAmount,
+        });
+        return new Response("OK", { status: 200 });
+      }
+    } catch (err) {
+      console.error("paystack-webhook:verify error", err);
+      return new Response("OK", { status: 200 });
+    }
+
     const nowIso = new Date().toISOString();
     await db
       .from("escrow_orders")
-      .update({ status: "funded", paid_at: nowIso, updated_at: nowIso })
+      .update({ status: "paid", paid_at: nowIso, updated_at: nowIso })
       .eq("paystack_reference", reference)
-      .in("status", ["initialized", "pending"]);
+      .in("status", ["initialized", "pending_payment", "pending", "funded"]);
   }
 
   return new Response("OK", { status: 200 });
