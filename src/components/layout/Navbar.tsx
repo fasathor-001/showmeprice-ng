@@ -4,6 +4,7 @@ import { supabase } from "../../lib/supabase";
 import { useProfile } from "../../hooks/useProfile";
 import { useFF } from "../../hooks/useFF";
 import { useUnreadMessagesCount } from "../../hooks/useUnreadMessagesCount";
+import { useMembership } from "../../hooks/useMembership";
 import { normalizeTier } from "../../lib/plans";
 import { getAccountStatus, setRoleHint } from "../../lib/userRole";
 import { useAuth } from "../../hooks/useAuth";
@@ -210,6 +211,7 @@ export default function Navbar() {
   const { profile, business, loading: profileLoading } = useProfile() as any;
   const path = useCurrentPath();
   const { user: authUser } = useAuth();
+  const { tier, loading: membershipLoading } = useMembership();
 
   const signedIn = !!authUser;
   const roleFromProfile = (profile as any)?.role ? String((profile as any).role).toLowerCase() : "";
@@ -276,6 +278,9 @@ export default function Navbar() {
       : planTier === "admin"
       ? "Admin"
       : "Free";
+  const premiumLike = tier === "premium" || tier === "institution" || tier === "admin";
+  const canUpgrade = !membershipLoading && !premiumLike;
+  const planCtaLabel = canUpgrade ? "Upgrade plan" : "Manage plan";
 
   const deliveryEnabled = !!ff?.delivery;
   const dealsEnabled = !!ff?.deals;
@@ -579,7 +584,7 @@ export default function Navbar() {
                             className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
                           >
                             <Icon name="tag" />
-                            Upgrade plan
+                            {planCtaLabel}
                           </button>
 
                           <button
@@ -689,7 +694,7 @@ export default function Navbar() {
                         className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
                       >
                         <Icon name="tag" />
-                        Upgrade plan
+                        {planCtaLabel}
                       </button>
 
                       <button
@@ -869,7 +874,7 @@ export default function Navbar() {
                     path === "/pricing" ? "bg-slate-50 text-brand" : "hover:bg-slate-50 text-slate-800"
                   )}
                 >
-                  <span>Upgrade plan</span>
+                  <span>{planCtaLabel}</span>
                   <Icon name="tag" />
                 </button>
 

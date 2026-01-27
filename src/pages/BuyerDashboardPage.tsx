@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { useAuth } from "../hooks/useAuth";
 import { useProfile } from "../hooks/useProfile";
 import { useFF } from "../hooks/useFF";
+import { useMembership } from "../hooks/useMembership";
 import { Heart, MessageSquare, Search, Settings, User2 } from "lucide-react";
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -22,9 +23,12 @@ export default function BuyerDashboardPage() {
   const { user } = useAuth();
   const { profile, loading } = useProfile() as any;
   const FF = useFF() as any;
+  const { tier, loading: membershipLoading } = useMembership();
 
   const messagingEnabled = !!FF?.messaging;
   const profileReady = !!user && !loading;
+  const premiumLike = tier === "premium" || tier === "institution" || tier === "admin";
+  const canUpgrade = !membershipLoading && !premiumLike;
 
   const name = useMemo(() => {
     const p = profile || {};
@@ -82,7 +86,7 @@ export default function BuyerDashboardPage() {
               onClick={() => nav("/pricing?view=buyer")}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-800 hover:bg-slate-50"
             >
-              Upgrade plan
+              {canUpgrade ? "Upgrade plan" : "Manage plan"}
             </button>
           </div>
 

@@ -15,6 +15,7 @@ import {
   BadgeCheck,
 } from "lucide-react";
 import { useFF } from "../hooks/useFF";
+import { useMembership } from "../hooks/useMembership";
 
 function nav(to: string) {
   try {
@@ -54,12 +55,15 @@ export default function DashboardPage() {
   const { user } = useAuth();
   const { profile, business, loading: profileLoading } = useProfile() as any;
   const FF = useFF() as any;
+  const { tier, loading: membershipLoading } = useMembership();
 
   const profileReady = !!user && !profileLoading;
   const userType = profileReady ? String((profile as any)?.user_type ?? "").toLowerCase() : "";
   const businessTier = profileReady ? String((business as any)?.seller_membership_tier ?? "").toLowerCase() : "";
   const buyerTier = profileReady ? String((profile as any)?.membership_tier ?? (profile as any)?.membership_1 ?? "free").toLowerCase() : "free";
   const membership = isSeller && businessTier ? businessTier : buyerTier;
+  const premiumLike = tier === "premium" || tier === "institution" || tier === "admin";
+  const canUpgrade = !membershipLoading && !premiumLike;
   const isSeller = profileReady && userType === "seller";
 
   const messagingEnabled = !!FF?.messaging;
@@ -361,7 +365,7 @@ export default function DashboardPage() {
         onClick={() => nav("/pricing")}
         className="inline-flex items-center gap-2 border border-slate-200 bg-white text-slate-800 font-black px-4 py-2.5 rounded-xl hover:bg-slate-50"
       >
-        Upgrade plan
+        {canUpgrade ? "Upgrade plan" : "Manage plan"}
       </button>
     </div>
   ) : (
@@ -380,7 +384,7 @@ export default function DashboardPage() {
         onClick={() => nav("/pricing")}
         className="inline-flex items-center gap-2 border border-slate-200 bg-white text-slate-800 font-black px-4 py-2.5 rounded-xl hover:bg-slate-50"
       >
-        Upgrade plan
+        {canUpgrade ? "Upgrade plan" : "Manage plan"}
       </button>
     </div>
   );

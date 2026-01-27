@@ -16,7 +16,7 @@ interface PricingPageProps {
 
 export default function PricingPage({ onNavigateHome, pricingReason, userType }: PricingPageProps) {
   const { user } = useAuth();
-  const { isPremium, isPro, isInstitution, loading, tier } = useMembership();
+  const { loading, tier } = useMembership();
   const { error } = usePayment();
   const { profile, business, loading: profileLoading } = useProfile() as any;
   const profileLoaded = !!user && !profileLoading;
@@ -71,6 +71,12 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
   const proPlan = plans.find((plan) => plan.key === "pro");
   const premiumPlan = plans.find((plan) => plan.key === "premium");
   const institutionPlan = plans.find((plan) => plan.key === "institution");
+  const currentTier = !loading ? (tier === "admin" ? "premium" : tier) : null;
+  const currentPlanKey = isSeller
+    ? currentTier === "institution"
+      ? "premium"
+      : currentTier
+    : currentTier;
 
   const PaymentButton = () => {
     const { initiatePremiumUpgrade, processing } = usePayment();
@@ -174,13 +180,6 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
     (window as any).openAuthModal?.();
   };
 
-  const showCurrent = (plan: "free" | "pro" | "premium") => {
-    if (isInstitution) return false;
-    if (plan === "premium") return isPremium;
-    if (plan === "pro") return isPro;
-    return !isPro && !isPremium;
-  };
-
   const renderStandardFeature = (text: string) => {
     const disabled = /^no\s/i.test(text);
     return (
@@ -238,11 +237,16 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
         <div
           className={`bg-white rounded-2xl border border-slate-200 p-8 shadow-sm flex flex-col relative overflow-hidden ${
             recommendedPlan === "free" ? "ring-2 ring-amber-300" : ""
-          }`}
+          } ${currentPlanKey === "free" ? "border-emerald-300 bg-emerald-50/30" : ""}`}
         >
           {recommendedPlan === "free" ? (
             <div className="absolute top-4 right-4 bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full">
               Recommended
+            </div>
+          ) : null}
+          {currentPlanKey === "free" ? (
+            <div className="absolute top-4 left-4 bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full">
+              Current plan
             </div>
           ) : null}
           <div className="mb-6">
@@ -259,13 +263,15 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
           </ul>
 
           <div className="mt-auto">
-            {showCurrent("free") ? (
-              <button className="w-full py-3 rounded-xl font-bold text-slate-700 bg-slate-100 border border-slate-200 cursor-default">
-                Your Current Plan
+            {loading ? (
+              <div className="w-full py-3 rounded-xl bg-slate-100 animate-pulse"></div>
+            ) : currentPlanKey === "free" ? (
+              <button className="w-full py-3 rounded-xl font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 cursor-default">
+                Current plan
               </button>
             ) : (
-              <button className="w-full py-3 rounded-xl font-bold text-slate-500 bg-slate-100 cursor-not-allowed">
-                Current: {tier === "institution" ? "Institution" : tier}
+              <button className="w-full py-3 rounded-xl font-bold text-slate-900 bg-white border border-slate-200 hover:bg-slate-50 transition">
+                Choose plan
               </button>
             )}
           </div>
@@ -275,11 +281,16 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
         <div
           className={`bg-white rounded-2xl border border-slate-200 p-8 shadow-sm flex flex-col relative overflow-hidden ${
             recommendedPlan === "pro" ? "ring-2 ring-amber-300" : ""
-          }`}
+          } ${currentPlanKey === "pro" ? "border-emerald-300 bg-emerald-50/30" : ""}`}
         >
           {recommendedPlan === "pro" ? (
             <div className="absolute top-4 right-4 bg-amber-100 text-amber-700 text-xs font-bold px-3 py-1 rounded-full">
               Recommended
+            </div>
+          ) : null}
+          {currentPlanKey === "pro" ? (
+            <div className="absolute top-4 left-4 bg-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full">
+              Current plan
             </div>
           ) : null}
           <div className="mb-6">
@@ -300,9 +311,9 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
           <div className="mt-auto">
             {loading ? (
               <div className="w-full py-3 rounded-xl bg-slate-100 animate-pulse"></div>
-            ) : showCurrent("pro") ? (
+            ) : currentPlanKey === "pro" ? (
               <button className="w-full py-3 rounded-xl font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 cursor-default">
-                Active Plan
+                Current plan
               </button>
             ) : !user ? (
               <button
@@ -319,7 +330,7 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
                 }}
                 className="w-full py-3 rounded-xl font-bold text-slate-900 bg-white border border-slate-200 hover:bg-slate-50 transition"
               >
-                Upgrade
+                Upgrade to {proPlan?.label ?? "Pro"}
               </button>
             )}
           </div>
@@ -329,13 +340,18 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
         <div
           className={`bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl border border-slate-700 p-8 shadow-xl flex flex-col relative overflow-hidden ${
             recommendedPlan === "premium" ? "ring-2 ring-amber-400" : ""
-          }`}
+          } ${currentPlanKey === "premium" ? "ring-2 ring-emerald-400" : ""}`}
         >
           <div className="absolute top-0 right-0 p-4 opacity-10">
             <ArrowRight />
           </div>
 
           <div className="mb-6 relative z-10">
+            {currentPlanKey === "premium" ? (
+              <div className="bg-emerald-400 text-emerald-900 text-xs font-black px-3 py-1 rounded-full inline-block mb-3 uppercase tracking-wider">
+                Current plan
+              </div>
+            ) : null}
             {recommendedPlan === "premium" ? (
               <div className="bg-amber-400 text-amber-900 text-xs font-black px-3 py-1 rounded-full inline-block mb-3 uppercase tracking-wider">
                 Recommended
@@ -367,9 +383,9 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
               >
                 Sign In to Upgrade
               </button>
-            ) : isPremium ? (
+            ) : currentPlanKey === "premium" ? (
               <button className="w-full py-3 rounded-xl font-bold text-green-800 bg-green-100 flex items-center justify-center gap-2 cursor-default">
-                <ArrowRight /> Active Membership
+                <ArrowRight /> Current plan
               </button>
             ) : (
               <PaymentButton />
@@ -379,7 +395,11 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
         </div>
 
         {!isSeller ? (
-          <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm flex flex-col relative overflow-hidden">
+          <div
+            className={`bg-white rounded-2xl border border-slate-200 p-8 shadow-sm flex flex-col relative overflow-hidden ${
+              currentPlanKey === "institution" ? "border-emerald-300 bg-emerald-50/30" : ""
+            }`}
+          >
             <div className="mb-6">
               <h3 className="text-xl font-bold text-slate-900">{institutionPlan?.label ?? "Institution"}</h3>
               <div className="flex items-baseline gap-1 mt-2">
@@ -396,15 +416,23 @@ export default function PricingPage({ onNavigateHome, pricingReason, userType }:
             </ul>
 
             <div className="mt-auto">
-              <button
-                onClick={() => {
-                  window.location.href =
-                    "mailto:support@showmeprice.ng?subject=Institution%20Plan&body=Hi%20ShowMePrice%2C%20we%20need%20an%20Institution%20plan.";
-                }}
-                className="w-full py-3 rounded-xl font-bold text-slate-900 bg-white border border-slate-200 hover:bg-slate-50 transition"
-              >
-                Contact Sales
-              </button>
+              {loading ? (
+                <div className="w-full py-3 rounded-xl bg-slate-100 animate-pulse"></div>
+              ) : currentPlanKey === "institution" ? (
+                <button className="w-full py-3 rounded-xl font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 cursor-default">
+                  Current plan
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    window.location.href =
+                      "mailto:support@showmeprice.ng?subject=Institution%20Plan&body=Hi%20ShowMePrice%2C%20we%20need%20an%20Institution%20plan.";
+                  }}
+                  className="w-full py-3 rounded-xl font-bold text-slate-900 bg-white border border-slate-200 hover:bg-slate-50 transition"
+                >
+                  Contact Sales
+                </button>
+              )}
             </div>
           </div>
         ) : null}
