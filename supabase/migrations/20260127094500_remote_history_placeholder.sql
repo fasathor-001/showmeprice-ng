@@ -1,0 +1,4 @@
+﻿-- NO-OP PLACEHOLDER
+-- This migration version exists in the remote migration history table,
+-- but the original migration file was missing locally.
+-- Safe no-op: remote already applied it.
