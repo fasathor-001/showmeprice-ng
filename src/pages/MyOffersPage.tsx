@@ -34,7 +34,9 @@ export default function MyOffersPage() {
       setError(null);
       const { data, error } = await supabase
         .from("offers")
-        .select("id, product_id, amount, currency, status, created_at, expires_at, product_title_snapshot")
+        .select(
+          "id, product_id, offer_amount_kobo, accepted_amount_kobo, currency, status, created_at, expires_at, product_title_snapshot"
+        )
         .eq("buyer_id", user.id)
         .order("created_at", { ascending: false });
 
@@ -97,6 +99,8 @@ export default function MyOffersPage() {
           const status = String(offer.status ?? "").toLowerCase();
           const title = offer.product_title_snapshot || "Offer";
           const canPay = status === "accepted";
+          const amountKobo = offer.accepted_amount_kobo ?? offer.offer_amount_kobo ?? 0;
+          const amountNgn = amountKobo / 100;
           return (
             <div key={offer.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
@@ -104,7 +108,7 @@ export default function MyOffersPage() {
                 <div className="text-xs font-bold text-slate-500 uppercase">{status || "sent"}</div>
               </div>
               <div className="mt-2 text-sm text-slate-700">
-                Amount: <span className="font-black text-slate-900">{formatMoney(offer.amount)}</span>
+                Amount: <span className="font-black text-slate-900">{formatMoney(amountNgn)}</span>
               </div>
               <div className="text-xs text-slate-500 mt-1">{offer.created_at}</div>
               {canPay ? (
