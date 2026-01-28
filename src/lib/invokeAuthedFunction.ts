@@ -22,15 +22,14 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
   } = await supabase.auth.getSession();
 
   const jwt = (session?.access_token ?? "").trim();
-  const jwtParts = jwt.split(".").length;
   console.log("[invokeAuthedFunction] token", {
     hasSession: !!session,
     jwtLen: jwt.length,
-    jwtParts,
+    jwtParts: jwt ? jwt.split(".").length : 0,
     jwtPrefix: jwt.slice(0, 10),
   });
 
-  if (!jwt || jwtParts !== 3) {
+  if (!jwt || jwt.split(".").length !== 3) {
     try {
       sessionStorage.setItem("smp:auth_notice", "Session expired. Please sign in again.");
     } catch {}
@@ -41,42 +40,28 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
     throw new Error("Session expired. Please sign in again.");
   }
 
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${jwt}`,
-    },
-    body: JSON.stringify(options?.body ?? {}),
+  const result = await supabase.functions.invoke(name, {
+    body: options?.body ?? {},
   });
 
-  let data: any = null;
-  let error: any = null;
-  const contentType = res.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
+  if (result.error) {
+    let detail = result.error.message;
     try {
-      data = await res.json();
-    } catch {
-      data = null;
-    }
-  } else {
-    try {
-      data = await res.text();
-    } catch {
-      data = null;
-    }
+      const ctx = (result.error as any)?.context;
+      if (ctx?.response) {
+        const text = await ctx.response.text();
+        if (text) detail = `${detail}: ${text}`;
+      } else if (ctx?.json) {
+        const parsed = await ctx.json();
+        const extra =
+          parsed && typeof parsed === "object"
+            ? parsed?.detail || parsed?.error || parsed?.message || JSON.stringify(parsed)
+            : String(parsed ?? "");
+        if (extra) detail = `${detail}: ${extra}`;
+      }
+    } catch {}
+    (result.error as any).message = detail;
   }
 
-  if (!res.ok) {
-    const detail =
-      typeof data === "string"
-        ? data
-        : data && typeof data === "object"
-        ? data?.error || data?.message || JSON.stringify(data)
-        : "";
-    error = { message: `${res.status} ${res.statusText}${detail ? `: ${detail}` : ""}` };
-  }
-  return { data, error };
+  return result;
 }
