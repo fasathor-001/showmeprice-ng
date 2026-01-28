@@ -1,9 +1,8 @@
-import { getAuthSession } from "./authSession";
+import { supabase } from "./supabase";
 
-export async function getAccessToken(): Promise<string> {
-  const token = getAuthSession()?.access_token || "";
-  if (!token || token.split(".").length !== 3) {
-    throw new Error("Session expired");
-  }
-  return token;
+export async function getAccessToken(): Promise<string | null> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.access_token ?? null;
 }

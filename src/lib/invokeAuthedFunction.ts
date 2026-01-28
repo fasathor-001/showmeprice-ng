@@ -1,5 +1,4 @@
 import { supabase } from "./supabase";
-import { getAuthSession } from "./authSession";
 
 type InvokeOptions<T> = {
   body?: T;
@@ -18,9 +17,11 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
   name: string,
   options?: InvokeOptions<TBody>
 ) {
-  const token = getAuthSession()?.access_token || "";
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
 
-  if (!token || token.split(".").length !== 3) {
+  if (!session?.access_token) {
     try {
       sessionStorage.setItem("smp:auth_notice", "Session expired. Please sign in again.");
     } catch {}
@@ -33,7 +34,6 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
 
   const result = await supabase.functions.invoke(name, {
     body: options?.body ?? {},
-    headers: { Authorization: `Bearer ${token}` },
   });
 
   if (result.error) {
