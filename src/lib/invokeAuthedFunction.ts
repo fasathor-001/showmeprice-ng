@@ -2,6 +2,7 @@ import { supabase } from "./supabase";
 
 type InvokeOptions<T> = {
   body?: T;
+  headers?: Record<string, string>;
 };
 
 function nav(to: string) {
@@ -42,6 +43,7 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
 
   const result = await supabase.functions.invoke(name, {
     body: options?.body ?? {},
+    headers: { ...(options?.headers ?? {}), Authorization: `Bearer ${jwt}` },
   });
 
   if (result.error) {
