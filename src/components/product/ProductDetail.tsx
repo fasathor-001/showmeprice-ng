@@ -15,6 +15,7 @@ import { useSellerFollow } from "../../hooks/useSellerFollow";
 import { useProductComments } from "../../hooks/useProductComments";
 import { useReportProduct } from "../../hooks/useReportProduct";
 import { getAccessToken } from "../../lib/getAccessToken";
+import { invokeAuthedFunction } from "../../lib/invokeAuthedFunction";
 import FeatureGate from "../common/FeatureGate";
 import SEO from "../common/SEO";
 
@@ -385,6 +386,10 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   };
 
   const handleOfferSend = async () => {
+    if (!user?.id) {
+      emitToast("info", "Please sign in to make an offer");
+      return;
+    }
     if (!productId) {
       emitToast("error", "Product is missing.");
       return;
@@ -396,46 +401,15 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
     }
     setOfferSending(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) {
-        emitToast("info", "Please sign in to make an offer");
-        return;
-      }
-
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/offer_create`;
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
+      const { data, error } = await invokeAuthedFunction("offer_create", {
+        body: {
           product_id: String(productId),
           amount,
           message: offerNote.trim() || null,
-        }),
+        },
       });
-
-      if (!res.ok) {
-        let detail = "";
-        const contentType = res.headers.get("content-type") || "";
-        if (contentType.includes("application/json")) {
-          try {
-            const json = await res.json();
-            detail = String(json?.message ?? json?.error ?? JSON.stringify(json));
-          } catch {
-            detail = "";
-          }
-        } else {
-          try {
-            detail = await res.text();
-          } catch {
-            detail = "";
-          }
-        }
-        throw new Error(detail?.trim() || `Offer failed to send. (${res.status})`);
+      if (error || !data) {
+        throw new Error(error?.message ?? "Offer failed to send.");
       }
       emitToast("success", "Offer sent");
       setOfferOpen(false);
