@@ -32,6 +32,18 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
     throw new Error("Session expired. Please sign in again.");
   }
 
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData?.user) {
+    try {
+      sessionStorage.setItem("smp:auth_notice", "Session expired. Please sign in again.");
+    } catch {}
+    try {
+      await supabase.auth.signOut();
+    } catch {}
+    nav("/signin");
+    throw new Error("Please sign in again.");
+  }
+
   const result = await supabase.functions.invoke(name, {
     body: options?.body ?? {},
   });
