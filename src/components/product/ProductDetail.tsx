@@ -401,6 +401,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
     }
     setOfferSending(true);
     try {
+      console.log("[MakeOffer] clicked submit", { productId, amount });
       const { data, error } = await invokeAuthedFunction("offer_create", {
         body: {
           product_id: String(productId),
@@ -416,6 +417,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
       setOfferAmount("");
       setOfferNote("");
     } catch (err: any) {
+      console.error("[MakeOffer] failed", err);
       emitToast("error", err?.message ?? "Failed to send offer.");
     } finally {
       setOfferSending(false);

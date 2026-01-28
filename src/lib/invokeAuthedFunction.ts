@@ -45,6 +45,7 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
   });
 
   if (result.error) {
+    console.error("[invokeAuthedFunction] error", result.error);
     let detail = result.error.message;
     try {
       const ctx = (result.error as any)?.context;
