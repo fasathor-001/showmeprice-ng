@@ -21,7 +21,16 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
     data: { session },
   } = await supabase.auth.getSession();
 
-  if (!session?.access_token) {
+  const jwt = (session?.access_token ?? "").trim();
+  const jwtParts = jwt.split(".").length;
+  console.log("[invokeAuthedFunction] token", {
+    hasSession: !!session,
+    jwtLen: jwt.length,
+    jwtParts,
+    jwtPrefix: jwt.slice(0, 10),
+  });
+
+  if (!jwt || jwtParts !== 3) {
     try {
       sessionStorage.setItem("smp:auth_notice", "Session expired. Please sign in again.");
     } catch {}
@@ -32,33 +41,42 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
     throw new Error("Session expired. Please sign in again.");
   }
 
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError || !userData?.user) {
-    try {
-      sessionStorage.setItem("smp:auth_notice", "Session expired. Please sign in again.");
-    } catch {}
-    try {
-      await supabase.auth.signOut();
-    } catch {}
-    nav("/signin");
-    throw new Error("Please sign in again.");
-  }
-
-  const result = await supabase.functions.invoke(name, {
-    body: options?.body ?? {},
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${jwt}`,
+    },
+    body: JSON.stringify(options?.body ?? {}),
   });
 
-  if (result.error) {
-    let detail = result.error.message;
+  let data: any = null;
+  let error: any = null;
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
     try {
-      const ctx = (result.error as any)?.context;
-      if (ctx?.json) {
-        const parsed = await ctx.json();
-        detail = parsed?.detail || parsed?.error || detail;
-      }
-    } catch {}
-    (result.error as any).message = detail;
+      data = await res.json();
+    } catch {
+      data = null;
+    }
+  } else {
+    try {
+      data = await res.text();
+    } catch {
+      data = null;
+    }
   }
 
-  return result;
+  if (!res.ok) {
+    const detail =
+      typeof data === "string"
+        ? data
+        : data && typeof data === "object"
+        ? data?.error || data?.message || JSON.stringify(data)
+        : "";
+    error = { message: `${res.status} ${res.statusText}${detail ? `: ${detail}` : ""}` };
+  }
+  return { data, error };
 }
