@@ -56,12 +56,12 @@ serve(async (req) => {
   if (!productId) return jsonResponse(400, { error: "productId is required." });
   if (!amount) return jsonResponse(400, { error: "amount is required." });
 
-  const authHeader = req.headers.get("authorization") ?? req.headers.get("Authorization") ?? "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length).trim() : "";
-  if (!token) return jsonResponse(401, { error: "Unauthorized" });
+  const auth = req.headers.get("Authorization") ?? "";
+  const jwt = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7) : auth;
+  if (!jwt) return jsonResponse(401, { error: "Unauthorized" });
 
   const supabaseAuth = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
-  const { data: authData, error: authErr } = await supabaseAuth.auth.getUser(token);
+  const { data: authData, error: authErr } = await supabaseAuth.auth.getUser(jwt);
   const user = authData?.user ?? null;
   if (authErr || !user) return jsonResponse(401, { error: "Unauthorized" });
 
