@@ -60,7 +60,7 @@ serve(async (req) => {
 
   const { data: offer, error: offerErr } = await supabaseAdmin
     .from("offers")
-    .select("id, buyer_id, seller_id, amount, currency, status, expires_at")
+    .select("id, buyer_id, seller_id, offer_amount_kobo, accepted_amount_kobo, currency, status, expires_at")
     .eq("id", offerId)
     .maybeSingle();
 
@@ -79,10 +79,8 @@ serve(async (req) => {
     return jsonResponse(400, { error: "Offer has expired." });
   }
 
-  const amount = Number(offer.amount ?? 0);
-  if (!Number.isFinite(amount) || amount <= 0) return jsonResponse(400, { error: "Invalid amount." });
-
-  const amountKobo = toKobo(amount);
+  const amountKobo = Number(offer.accepted_amount_kobo ?? offer.offer_amount_kobo ?? 0);
+  if (!Number.isFinite(amountKobo) || amountKobo <= 0) return jsonResponse(400, { error: "Invalid amount." });
   const currency = String(offer.currency ?? "NGN") || "NGN";
 
   const { data: existing } = await supabaseAdmin

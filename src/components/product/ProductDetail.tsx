@@ -404,8 +404,8 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
       console.log("[MakeOffer] clicked submit", { productId, amount });
       const { data, error } = await invokeAuthedFunction("offer_create", {
         body: {
-          product_id: String(productId),
-          amount,
+          productId: String(productId),
+          offer_amount_kobo: Math.round(amount * 100),
           message: offerNote.trim() || null,
         },
       });

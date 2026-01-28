@@ -17,12 +17,6 @@ function normalizeId(input: unknown) {
   return String(input ?? "").trim();
 }
 
-function parseAmount(input: unknown) {
-  const n = Number(input ?? 0);
-  if (!Number.isFinite(n) || n <= 0) return null;
-  return Math.round(n * 100) / 100;
-}
-
 function toKobo(amount: number) {
   return Math.round(amount * 100);
 }
@@ -47,14 +41,20 @@ serve(async (req) => {
   }
 
   const productId = normalizeId(payload?.productId ?? payload?.product_id);
-  const amount = parseAmount(payload?.amount);
+  const offerAmountKobo = Number.isFinite(Number(payload?.offer_amount_kobo))
+    ? Number(payload?.offer_amount_kobo)
+    : Number.isFinite(Number(payload?.amount))
+    ? toKobo(Number(payload?.amount))
+    : NaN;
   const message = String(payload?.message ?? "").trim() || null;
   const conversationId = normalizeId(payload?.conversationId ?? payload?.conversation_id) || null;
   const productTitleSnapshot = String(payload?.productTitle ?? payload?.product_title_snapshot ?? "").trim() || null;
   const listedPriceKobo = Number(payload?.listedPriceKobo ?? payload?.listed_price_kobo ?? 0) || null;
 
   if (!productId) return jsonResponse(400, { error: "productId is required." });
-  if (!amount) return jsonResponse(400, { error: "amount is required." });
+  if (!Number.isFinite(offerAmountKobo) || offerAmountKobo <= 0) {
+    return jsonResponse(400, { error: "Invalid offer amount." });
+  }
 
   const auth = req.headers.get("Authorization") ?? "";
   const jwt = auth.toLowerCase().startsWith("bearer ") ? auth.slice(7) : auth;
@@ -93,7 +93,6 @@ serve(async (req) => {
   if (buyerId === sellerId) return jsonResponse(400, { error: "Buyer and seller cannot be the same." });
 
   const offerId = crypto.randomUUID();
-  const amountKobo = toKobo(amount);
   const snapshotTitle = productTitleSnapshot || String(product?.title ?? "").trim() || null;
   const priceKobo = listedPriceKobo ?? (Number(product?.price ?? 0) ? toKobo(Number(product?.price)) : null);
 
@@ -102,12 +101,11 @@ serve(async (req) => {
     product_id: productId,
     buyer_id: buyerId,
     seller_id: sellerId,
-    amount,
     currency: "NGN",
     message,
     status: "sent",
     conversation_id: conversationId,
-    offer_amount_kobo: amountKobo,
+    offer_amount_kobo: offerAmountKobo,
     product_title_snapshot: snapshotTitle,
     listed_price_kobo: priceKobo,
   });
@@ -120,7 +118,7 @@ serve(async (req) => {
     offer_id: offerId,
     actor_id: buyerId,
     type: "created",
-    payload: { amount, message },
+    payload: { amount_kobo: offerAmountKobo, message },
   });
 
   return jsonResponse(200, {
