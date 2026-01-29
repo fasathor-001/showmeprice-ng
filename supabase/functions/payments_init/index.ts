@@ -91,7 +91,7 @@ serve(async (req) => {
       return jsonResponse(403, { error: "Escrow is only available for ₦50,000+ items." });
     }
 
-    const feeKobo = Math.round(priceKobo * 0.015) + 10000;
+    const feeKobo = Math.floor(priceKobo * 0.015) + 10000;
     amountKobo = priceKobo + feeKobo;
     if (!Number.isFinite(amountKobo) || amountKobo <= 0) {
       return jsonResponse(400, { error: "Invalid amount." });

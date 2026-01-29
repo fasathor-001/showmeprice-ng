@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { supabase } from "../lib/supabase";
+import { invokeAuthedFunction } from "../lib/invokeAuthedFunction";
 
 function nav(to: string) {
   if (typeof window === "undefined") return;
@@ -44,42 +44,19 @@ export default function EscrowReturnPage() {
     setLastReference(reference);
 
     try {
-      const callVerify = async (accessToken: string) => {
-        const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/escrow-verify`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-            apikey: String(import.meta.env.VITE_SUPABASE_ANON_KEY || ""),
-          },
-          body: JSON.stringify({ reference }),
-        });
-        const data = await resp.json().catch(() => ({}));
-        return { resp, data };
-      };
-
-      const { data: sessRes } = await supabase.auth.getSession();
-      const session = sessRes?.session;
-      if (!session?.access_token) {
-        setNeedsLogin(true);
-        setError("Please sign in to verify payment.");
-        setStatus("Unable to verify payment.");
-        return false;
-      }
-
-      let { resp, data } = await callVerify(session.access_token);
-      if (resp.status === 401) {
-        await supabase.auth.refreshSession();
-        const { data: retrySess } = await supabase.auth.getSession();
-        const retryToken = retrySess?.session?.access_token;
-        if (retryToken) {
-          ({ resp, data } = await callVerify(retryToken));
+      const { data, error: verifyErr } = await invokeAuthedFunction("escrow-verify", {
+        body: { reference },
+      });
+      if (verifyErr) {
+        const message = String(verifyErr?.message ?? "");
+        if (message.toLowerCase().includes("session expired") || message.toLowerCase().includes("sign in")) {
+          setNeedsLogin(true);
+          setError("Please sign in to verify payment.");
+          setStatus("Unable to verify payment.");
+          return false;
         }
-      }
-
-      if (!resp.ok) {
-        if (resp.status >= 500) return "server_error";
-        throw new Error((data as any)?.error || "Failed to verify payment.");
+        if (message.toLowerCase().includes("500")) return "server_error";
+        throw verifyErr;
       }
 
       const ok = Boolean((data as any)?.ok);

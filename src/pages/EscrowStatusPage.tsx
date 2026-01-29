@@ -57,8 +57,14 @@ export default function EscrowStatusPage() {
           setLoading(false);
           return;
         }
-        setEscrow((data as any) ?? null);
+        const nextEscrow = (data as any) ?? null;
+        setEscrow(nextEscrow);
         setLoading(false);
+        const nextStatus = String(nextEscrow?.status ?? "").toLowerCase();
+        if (nextStatus === "funded" && intervalId) {
+          clearInterval(intervalId);
+          intervalId = null;
+        }
       } catch (e: any) {
         if (alive) {
           setError(e?.message ?? "Failed to load escrow status.");
