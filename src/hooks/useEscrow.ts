@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { getAccessToken } from "../lib/getAccessToken";
+import { invokeAuthedFunction } from "../lib/invokeAuthedFunction";
 import { useAuth } from "./useAuth";
 
 export type EscrowTransaction = {
@@ -75,24 +75,13 @@ export function useEscrow() {
       setLoading(true);
       setError(null);
       try {
-        let token = "";
-        try {
-          token = await getAccessToken();
-        } catch {
-          token = "";
-        }
-        if (!token) {
-          throw new Error("Please sign in again.");
-        }
-
-        const { data, error: initErr } = await supabase.functions.invoke("paystack-init-escrow", {
+        const { data, error: initErr } = await invokeAuthedFunction("paystack-init-escrow", {
           body: {
             product_id: params.productId,
             seller_id: params.sellerId,
             amount_kobo: Number(params.amountKobo),
             currency: params.currency ?? null,
           },
-          headers: { Authorization: `Bearer ${token}` },
         });
 
         if (initErr) throw initErr;

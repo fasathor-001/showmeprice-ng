@@ -208,7 +208,7 @@ serve(async (req) => {
         .select(
           "id,status,delivery_status,dispute_status,subtotal_kobo,escrow_fee_kobo,total_kobo,settlement_status,released_at,buyer_id,seller_id,product_snapshot,created_at"
         )
-        .eq("status", "paid")
+        .in("status", ["paid", "funded"])
         .eq("delivery_status", "confirmed")
         .eq("dispute_status", "none")
         .is("released_at", null)
@@ -291,7 +291,7 @@ serve(async (req) => {
       if (userId !== buyerId) {
         return jsonResponse(403, { ok: false, error: "Forbidden", detail: "This order is not yours." });
       }
-      if (String(order.status) !== "paid") {
+      if (!["paid", "funded"].includes(String(order.status))) {
         return jsonResponse(400, { ok: false, error: "Invalid state", detail: "Only paid orders can be confirmed." });
       }
       if (String(order.dispute_status) !== "none") {
@@ -353,7 +353,7 @@ serve(async (req) => {
       if (userId !== buyerId) {
         return jsonResponse(403, { ok: false, error: "Forbidden", detail: "This order is not yours." });
       }
-      if (String(order.status) !== "paid") {
+      if (!["paid", "funded"].includes(String(order.status))) {
         return jsonResponse(400, { ok: false, error: "Invalid state", detail: "Only paid orders can be disputed." });
       }
       if (String(order.delivery_status) === "confirmed") {
@@ -536,7 +536,7 @@ serve(async (req) => {
         if (!orderRow?.id) {
           return jsonResponse(404, { ok: false, error: "Not found.", detail: "Escrow order not found." });
         }
-        if (String(orderRow.status) !== "paid") {
+        if (!["paid", "funded"].includes(String(orderRow.status))) {
           return jsonResponse(400, { ok: false, error: "Invalid state", detail: "Only paid orders can be released." });
         }
         if (String(orderRow.delivery_status) !== "confirmed") {

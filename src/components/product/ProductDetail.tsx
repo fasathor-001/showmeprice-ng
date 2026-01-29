@@ -568,24 +568,17 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
     try {
       setEscrowStarting(true);
-      let token = "";
-      try {
-        token = await getAccessToken();
-      } catch {
-        setEscrowError("Session expired. Please sign in again.");
-        try {
-          await supabase.auth.signOut();
-        } catch {}
-        window.history.pushState({}, "", "/signin");
-        window.dispatchEvent(new Event("smp:navigate"));
-        return;
-      }
+      const origin = window.location.origin || "";
+      const successUrl = `${origin}/escrow/status`;
+      const cancelUrl = `${origin}/escrow/status`;
 
-      const { data, error } = await supabase.functions.invoke("escrow-init", {
+      const { data, error } = await invokeAuthedFunction("payments_init", {
         body: {
+          kind: "escrow",
           product_id: safeText(productId),
+          success_url: successUrl,
+          cancel_url: cancelUrl,
         },
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       const authorizationUrl = String((data as any)?.authorization_url ?? "").trim();

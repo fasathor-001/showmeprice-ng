@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { ShieldAlert } from "lucide-react";
-import { supabase } from "../lib/supabase";
-import { getAccessToken } from "../lib/getAccessToken";
+import { invokeAuthedFunction } from "../lib/invokeAuthedFunction";
 import { useAdmin } from "../hooks/useAdmin";
 import { useProfile } from "../hooks/useProfile";
 
@@ -31,19 +30,8 @@ export default function AdminDashboard({ onNavigateHome }: AdminDashboardProps) 
     setInviteLoading(true);
     setInviteNotice(null);
     try {
-      let token = "";
-      try {
-        token = await getAccessToken();
-      } catch {
-        token = "";
-      }
-      if (!token) {
-        setInviteNotice("Please sign in again.");
-        return;
-      }
-      const { data, error } = await supabase.functions.invoke("invite-admin", {
+      const { data, error } = await invokeAuthedFunction("invite-admin", {
         body: { email, redirectTo: `${window.location.origin}/auth/callback` },
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (!data?.ok) throw new Error("Invite failed");
@@ -69,19 +57,8 @@ export default function AdminDashboard({ onNavigateHome }: AdminDashboardProps) 
     setRevokeLoading(true);
     setRevokeNotice(null);
     try {
-      let token = "";
-      try {
-        token = await getAccessToken();
-      } catch {
-        token = "";
-      }
-      if (!token) {
-        setRevokeNotice("Please sign in again.");
-        return;
-      }
-      const { data, error } = await supabase.functions.invoke("revoke-admin", {
+      const { data, error } = await invokeAuthedFunction("revoke-admin", {
         body: { email },
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (!data?.ok) throw new Error("Revoke failed");

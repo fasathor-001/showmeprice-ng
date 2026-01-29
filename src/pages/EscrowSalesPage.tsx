@@ -57,8 +57,8 @@ export default function EscrowSalesPage() {
   const getSettlementLabel = (row: EscrowOrder) => {
     if (row.refunded_at) return "Refunded";
     if (row.released_at) return "Released to Seller";
-    if (row.status === "paid" && row.delivery_status === "confirmed") return "Awaiting Admin Release";
-    if (row.status === "paid") return "Paid (On Hold)";
+    if (["paid", "funded"].includes(row.status) && row.delivery_status === "confirmed") return "Awaiting Admin Release";
+    if (["paid", "funded"].includes(row.status)) return "Funded (On Hold)";
     return "Not paid";
   };
 

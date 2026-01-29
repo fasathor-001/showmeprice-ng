@@ -36,6 +36,7 @@ import InstitutionPage from "./pages/InstitutionPage";
 import SellerProfileSetupPage from "./pages/SellerProfileSetupPage";
 import VerificationPage from "./pages/account/VerificationPage";
 import EscrowReturnPage from "./pages/EscrowReturnPage";
+import EscrowStatusPage from "./pages/EscrowStatusPage";
 
 type HomeMode = "home" | "marketplace" | "product";
 type InboxInit = { chatId?: string; userId?: string; productId?: string } | null;
@@ -371,6 +372,7 @@ export default function App() {
     if (path === "/help" || path === "/help/") return <HelpPage />;
     if (path === "/escrow/callback" || path === "/escrow/return" || path === "/escrow/success")
       return <EscrowReturnPage />;
+    if (path === "/escrow/status") return <EscrowStatusPage />;
 
     if (path === "/my-shop") {
       return (
