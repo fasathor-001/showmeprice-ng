@@ -63,6 +63,7 @@ type ViewMode =
   | "admin";
 
 const VIEWMODE_KEY = "__smp_viewMode";
+const NEW_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 // ✅ understands BOTH pathname (/admin) and hash (#admin)
 function parseViewModeFromLocation(): ViewMode | null {
@@ -534,14 +535,6 @@ export default function HomePage() {
       verificationStatus === "approved" ||
       tier === "verified" ||
       tier === "premium";
-    const isPremiumSeller = tier === "premium";
-    const verificationLabel = isVerified
-      ? "Verified"
-      : verificationStatus === "pending"
-      ? "Pending"
-      : verificationStatus === "rejected"
-      ? "Rejected"
-      : "Unverified";
 
     const hasDiscount =
       (product as any).original_price && (product as any).original_price > (product as any).price;
@@ -560,6 +553,13 @@ export default function HomePage() {
       (product as any)?.business?.business_name ||
       (product as any)?.business_name ||
       "";
+
+    const createdAtRaw = (product as any)?.created_at ?? (product as any)?.createdAt;
+    const createdAtDate = createdAtRaw ? new Date(createdAtRaw) : null;
+    const isNew48h =
+      !!createdAtDate &&
+      Number.isFinite(createdAtDate.getTime()) &&
+      Date.now() - createdAtDate.getTime() <= NEW_WINDOW_MS;
 
     return (
       <div
@@ -583,6 +583,16 @@ export default function HomePage() {
           <div className="absolute top-2 right-2 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs font-bold text-slate-700 shadow-sm capitalize">
             {(product as any).condition}
           </div>
+
+          {isNew48h ? (
+            <div
+              className={`absolute left-2 bg-slate-900 text-white px-2 py-1 rounded text-xs font-bold shadow-sm ${
+                hasDiscount ? "top-10" : "top-2"
+              }`}
+            >
+              NEW
+            </div>
+          ) : null}
 
           {hasDiscount ? (
             <div className="absolute top-2 left-2 bg-red-600 text-white px-2 py-1 rounded text-xs font-bold shadow-sm">
@@ -608,30 +618,28 @@ export default function HomePage() {
             ) : null}
           </div>
 
-          {/* ✅ Bottom row: Location LEFT, Seller RIGHT */}
-          <div className="mt-auto pt-3 border-t border-slate-50 flex items-start justify-between text-[11px] text-slate-500 gap-3">
-            {/* LEFT: Location */}
-            <div className="flex items-start gap-1 min-w-0">
-              <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" />
-              <div className="min-w-0 leading-tight">
-                <div className="truncate max-w-[160px] font-semibold text-slate-700">{stateName || "Location"}</div>
-                {city ? <div className="truncate max-w-[160px] text-slate-500">{city}</div> : null}
+          {/* ✅ Bottom rows: Location + Verified (top), Seller (bottom) */}
+          <div className="mt-auto pt-3 border-t border-slate-50 text-[11px] text-slate-500 space-y-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-1 min-w-0">
+                <MapPin className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                <div className="min-w-0 leading-tight">
+                  <div className="truncate max-w-[160px] font-semibold text-slate-700">{stateName || "Location"}</div>
+                  {city ? <div className="truncate max-w-[160px] text-slate-500">{city}</div> : null}
+                </div>
               </div>
+              {isVerified ? (
+                <div className="flex items-center gap-1 text-emerald-600 text-[11px] font-bold">
+                  <BadgeCheck className="w-3 h-3" />
+                  Verified
+                </div>
+              ) : null}
             </div>
 
-            {/* RIGHT: Seller */}
-            <div className="flex items-start gap-1 min-w-0 justify-end text-right">
-              {isVerified ? (
-                <BadgeCheck className={`w-3 h-3 flex-shrink-0 mt-0.5 ${isPremiumSeller ? "text-amber-500" : "text-brand"}`} />
-              ) : (
-                <Store className="w-3 h-3 flex-shrink-0 mt-0.5 text-slate-400" />
-              )}
-
+            <div className="flex items-start gap-1 min-w-0">
+              <Store className="w-3 h-3 flex-shrink-0 mt-0.5 text-slate-400" />
               <div className="min-w-0 leading-tight">
-                <div className="truncate max-w-[120px] font-semibold text-slate-700">{businessName || "Seller"}</div>
-                {businessName ? (
-                  <div className="truncate max-w-[120px] text-slate-500">{verificationLabel}</div>
-                ) : null}
+                <div className="truncate max-w-[160px] font-semibold text-slate-700">{businessName || "Seller"}</div>
               </div>
             </div>
           </div>

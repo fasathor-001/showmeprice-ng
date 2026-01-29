@@ -72,6 +72,61 @@ serve(async (req) => {
 
   const db = createClient(supabaseUrl, serviceKey);
 
+  const { data: paymentIntent } = await db
+    .from("payment_intents")
+    .select("id, intent, target_id, amount_kobo, status")
+    .eq("reference", reference)
+    .maybeSingle();
+
+  if (paymentIntent?.id) {
+    try {
+      const verifyRes = await fetch(
+        `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
+        { headers: { Authorization: `Bearer ${secret}` } }
+      );
+      const verifyJson = await verifyRes.json().catch(() => ({}));
+      if (!verifyRes.ok) return new Response("OK", { status: 200 });
+      const status = String(verifyJson?.data?.status ?? "");
+      const paidAmount = Number(verifyJson?.data?.amount ?? 0);
+      if (status !== "success") return new Response("OK", { status: 200 });
+      if (paymentIntent.amount_kobo && paidAmount && Number(paymentIntent.amount_kobo) !== paidAmount) {
+        console.error("paystack-webhook:payment_intents amount mismatch", {
+          expected: paymentIntent.amount_kobo,
+          actual: paidAmount,
+        });
+        return new Response("OK", { status: 200 });
+      }
+    } catch (err) {
+      console.error("paystack-webhook:payment_intents verify error", err);
+      return new Response("OK", { status: 200 });
+    }
+
+    const nowIso = new Date().toISOString();
+    await db
+      .from("payment_intents")
+      .update({ status: "paid", paid_at: nowIso, updated_at: nowIso })
+      .eq("id", paymentIntent.id);
+
+    if (String(paymentIntent.intent ?? "").toLowerCase() === "offer") {
+      const { data: offer } = await db
+        .from("offers")
+        .select("id")
+        .eq("id", paymentIntent.target_id)
+        .maybeSingle();
+
+      if (offer?.id) {
+        await db
+          .from("offers")
+          .update({ status: "paid", updated_at: nowIso })
+          .eq("id", offer.id);
+      } else {
+        console.log("paystack-webhook:payment_intents offer missing", paymentIntent.target_id);
+      }
+    }
+
+    return new Response("OK", { status: 200 });
+  }
+
   // Resolve escrow order id (optional but useful)
   const { data: order } = await db
     .from("escrow_orders")
@@ -139,11 +194,12 @@ serve(async (req) => {
 
       const { data: offer } = await db
         .from("offers")
-        .select("id, product_id, buyer_id, seller_id, amount, currency")
+        .select("id, product_id, buyer_id, seller_id, offer_amount_kobo, accepted_amount_kobo, currency")
         .eq("id", payment.offer_id)
         .maybeSingle();
 
       if (offer?.id) {
+        const orderAmountKobo = Number(offer.accepted_amount_kobo ?? offer.offer_amount_kobo ?? 0);
         await db
           .from("offers")
           .update({ status: "paid", updated_at: nowIso })
@@ -162,7 +218,7 @@ serve(async (req) => {
             product_id: offer.product_id,
             buyer_id: offer.buyer_id,
             seller_id: offer.seller_id,
-            amount: offer.amount,
+            amount: orderAmountKobo,
             currency: offer.currency ?? "NGN",
             status: "paid",
           });

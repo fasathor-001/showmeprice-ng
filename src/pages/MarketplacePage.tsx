@@ -16,6 +16,9 @@ import {
   Wrench,
   Tag,
   Search,
+  BadgeCheck,
+  Store,
+  MapPin,
 } from "lucide-react";
 import { useHubs } from "../hooks/useCategories";
 import { useRecentProducts } from "../hooks/useProducts";
@@ -44,6 +47,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   hammer: Hammer,
   wrench: Wrench,
 };
+
+const NEW_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 function hashToHue(input: string) {
   let hash = 0;
@@ -117,9 +122,11 @@ function getProductImages(product: any): string[] {
 }
 
 function verificationLabelFor(product: ProductWithRelations) {
-  if ((product as any)?.seller_is_verified === true) return "Verified";
-  const tier = String((product as any)?.seller_verification_tier ?? "").toLowerCase();
-  if (tier === "verified") return "Verified";
+  const b = (product as any)?.businesses ?? (product as any)?.business ?? {};
+  const status = String(b?.verification_status ?? "").toLowerCase();
+  const tier = String(b?.verification_tier ?? "").toLowerCase();
+  if (status === "verified" || status === "approved") return "Verified";
+  if (tier === "verified" || tier === "premium") return "Verified";
   return "";
 }
 
@@ -271,6 +278,12 @@ export default function MarketplacePage() {
                   : (product as any)?.city || (product as any)?.states?.name || "Nigeria";
               const verificationLabel = verificationLabelFor(product);
               const sellerName = businessNameFor(product);
+              const createdAtRaw = (product as any)?.created_at ?? (product as any)?.createdAt;
+              const createdAtDate = createdAtRaw ? new Date(createdAtRaw) : null;
+              const isNew48h =
+                !!createdAtDate &&
+                Number.isFinite(createdAtDate.getTime()) &&
+                Date.now() - createdAtDate.getTime() <= NEW_WINDOW_MS;
 
               return (
                 <button
@@ -287,6 +300,11 @@ export default function MarketplacePage() {
                         No image
                       </div>
                     )}
+                    {isNew48h ? (
+                      <div className="absolute top-2 right-12 bg-slate-900 text-white px-2 py-1 rounded text-xs font-bold shadow-sm">
+                        NEW
+                      </div>
+                    ) : null}
                     {images.length > 1 ? (
                       <>
                         <div className="absolute top-2 right-2 text-[10px] font-bold text-white bg-slate-900/70 px-2 py-0.5 rounded-full">
@@ -310,9 +328,22 @@ export default function MarketplacePage() {
                       {(product as any).title}
                     </div>
                     <div className="text-sm font-black text-brand mt-1">{formatMoney((product as any).price)}</div>
-                    <div className="text-xs text-slate-500 mt-1">{location}</div>
-                    <div className="text-xs text-slate-500 mt-1">{sellerName}</div>
-                    <div className="text-xs text-slate-500 mt-1">{verificationLabel}</div>
+                    <div className="text-xs text-slate-500 mt-1 flex items-center justify-between gap-2">
+                      <span className="truncate flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-slate-400" />
+                        {location}
+                      </span>
+                      {verificationLabel ? (
+                        <span className="flex items-center gap-1 text-emerald-600 text-[11px] font-bold">
+                          <BadgeCheck className="w-3 h-3" />
+                          Verified
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                      <Store className="w-3 h-3 text-slate-400" />
+                      <span className="truncate">{sellerName}</span>
+                    </div>
                   </div>
                 </button>
               );
@@ -346,6 +377,12 @@ export default function MarketplacePage() {
                   : (product as any)?.city || (product as any)?.states?.name || "Nigeria";
               const verificationLabel = verificationLabelFor(product);
               const sellerName = businessNameFor(product);
+              const createdAtRaw = (product as any)?.created_at ?? (product as any)?.createdAt;
+              const createdAtDate = createdAtRaw ? new Date(createdAtRaw) : null;
+              const isNew48h =
+                !!createdAtDate &&
+                Number.isFinite(createdAtDate.getTime()) &&
+                Date.now() - createdAtDate.getTime() <= NEW_WINDOW_MS;
 
               return (
                 <button
@@ -362,6 +399,11 @@ export default function MarketplacePage() {
                         No image
                       </div>
                     )}
+                    {isNew48h ? (
+                      <div className="absolute top-2 right-12 bg-slate-900 text-white px-2 py-1 rounded text-xs font-bold shadow-sm">
+                        NEW
+                      </div>
+                    ) : null}
                     {images.length > 1 ? (
                       <>
                         <div className="absolute top-2 right-2 text-[10px] font-bold text-white bg-slate-900/70 px-2 py-0.5 rounded-full">
@@ -385,9 +427,22 @@ export default function MarketplacePage() {
                       {(product as any).title}
                     </div>
                     <div className="text-sm font-black text-brand mt-1">{formatMoney((product as any).price)}</div>
-                    <div className="text-xs text-slate-500 mt-1">{location}</div>
-                    <div className="text-xs text-slate-500 mt-1">{sellerName}</div>
-                    <div className="text-xs text-slate-500 mt-1">{verificationLabel}</div>
+                    <div className="text-xs text-slate-500 mt-1 flex items-center justify-between gap-2">
+                      <span className="truncate flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-slate-400" />
+                        {location}
+                      </span>
+                      {verificationLabel ? (
+                        <span className="flex items-center gap-1 text-emerald-600 text-[11px] font-bold">
+                          <BadgeCheck className="w-3 h-3" />
+                          Verified
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                      <Store className="w-3 h-3 text-slate-400" />
+                      <span className="truncate">{sellerName}</span>
+                    </div>
                   </div>
                 </button>
               );

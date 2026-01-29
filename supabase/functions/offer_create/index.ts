@@ -6,6 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const BUILD_ID = "offer_create@2026-01-28-02";
+
 function jsonResponse(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
     status,
@@ -96,7 +98,7 @@ serve(async (req) => {
   const snapshotTitle = productTitleSnapshot || String(product?.title ?? "").trim() || null;
   const priceKobo = listedPriceKobo ?? (Number(product?.price ?? 0) ? toKobo(Number(product?.price)) : null);
 
-  const { error: insertErr } = await supabaseAdmin.from("offers").insert({
+  const offerRow = {
     id: offerId,
     product_id: productId,
     buyer_id: buyerId,
@@ -108,10 +110,18 @@ serve(async (req) => {
     offer_amount_kobo: offerAmountKobo,
     product_title_snapshot: snapshotTitle,
     listed_price_kobo: priceKobo,
-  });
+  };
+  console.log("[offer_create]", BUILD_ID, "offerRow keys:", Object.keys(offerRow));
+
+  const { error: insertErr } = await supabaseAdmin.from("offers").insert(offerRow);
 
   if (insertErr) {
-    return jsonResponse(500, { error: "Failed to create offer.", detail: insertErr.message });
+    return jsonResponse(500, {
+      error: "Failed to create offer.",
+      build: BUILD_ID,
+      offerRowKeys: Object.keys(offerRow),
+      detail: insertErr.message,
+    });
   }
 
   await supabaseAdmin.from("offer_events").insert({
@@ -124,5 +134,6 @@ serve(async (req) => {
   return jsonResponse(200, {
     id: offerId,
     status: "sent",
+    build: BUILD_ID,
   });
 });

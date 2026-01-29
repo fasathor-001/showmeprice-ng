@@ -67,7 +67,7 @@ serve(async (req) => {
 
   const { data: offer, error: offerErr } = await supabaseAdmin
     .from("offers")
-    .select("id, buyer_id, seller_id, amount, status, expires_at")
+    .select("id, buyer_id, seller_id, offer_amount_kobo, accepted_amount_kobo, status, expires_at")
     .eq("id", offerId)
     .maybeSingle();
 
@@ -91,8 +91,12 @@ serve(async (req) => {
 
   if (action === "accept") {
     if (!isSeller) return jsonResponse(403, { error: "Not allowed." });
+    const offerAmountKobo = Number(offer?.accepted_amount_kobo ?? offer?.offer_amount_kobo ?? 0);
+    if (!Number.isFinite(offerAmountKobo) || offerAmountKobo <= 0) {
+      return jsonResponse(400, { error: "Invalid offer amount." });
+    }
     updates = { ...updates, status: "accepted", accepted_by: user.id, accepted_at: nowIso };
-    updates.accepted_amount_kobo = toKobo(Number(offer.amount ?? 0));
+    updates.accepted_amount_kobo = offerAmountKobo;
     eventType = "accept";
   } else if (action === "decline") {
     if (!isSeller) return jsonResponse(403, { error: "Not allowed." });
@@ -104,7 +108,6 @@ serve(async (req) => {
     updates = {
       ...updates,
       status: "countered",
-      amount,
       offer_amount_kobo: toKobo(amount),
     };
     eventType = "counter";

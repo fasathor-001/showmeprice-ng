@@ -1,11 +1,12 @@
 ﻿import React, { useCallback, useEffect, useMemo } from "react";
-import { ArrowRight, BadgePercent, Info, RefreshCw, Slash } from "lucide-react";
+import { ArrowRight, BadgeCheck, BadgePercent, Info, MapPin, RefreshCw, Slash, Store } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useProfile } from "../hooks/useProfile";
 import { useFeatureFlags } from "../contexts/FeatureFlagsContext";
 import { useDealProducts } from "../hooks/useDealProducts";
 
 const PAGE_SIZE = 24;
+const NEW_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 function navigateToPath(to: string) {
   window.history.pushState({}, "", to);
@@ -328,6 +329,19 @@ export default function DealsPage() {
                   const bizName = (p.businesses?.business_name || p.business_name || "").toString().trim();
                   const catName = (p.subcategories?.name || p.category_name || "").toString().trim();
                   const stateName = (p.states?.name || p.state || "").toString().trim();
+                  const verificationStatus = String(p.businesses?.verification_status ?? "").toLowerCase();
+                  const verificationTier = String(p.businesses?.verification_tier ?? "").toLowerCase();
+                  const sellerVerified =
+                    verificationStatus === "approved" ||
+                    verificationStatus === "verified" ||
+                    verificationTier === "verified" ||
+                    verificationTier === "premium";
+                  const createdAtRaw = p?.created_at ?? p?.createdAt;
+                  const createdAtDate = createdAtRaw ? new Date(createdAtRaw) : null;
+                  const isNew =
+                    !!createdAtDate &&
+                    Number.isFinite(createdAtDate.getTime()) &&
+                    Date.now() - createdAtDate.getTime() <= NEW_WINDOW_MS;
 
                   return (
                     <button
@@ -349,6 +363,12 @@ export default function DealsPage() {
                           DEAL
                         </span>
 
+                        {isNew ? (
+                          <span className="absolute top-2 left-16 text-[10px] font-black px-2 py-1 rounded-full bg-emerald-600 text-white shadow">
+                            NEW
+                          </span>
+                        ) : null}
+
                         {/* season pill */}
                         <span className="absolute top-2 right-2 text-[10px] font-black px-2 py-1 rounded-full bg-white/90 text-slate-700 border border-slate-200">
                           {(p.deal_season || seasonLabel || "Deals").toString()}
@@ -358,10 +378,24 @@ export default function DealsPage() {
                       <div className="p-3">
                         <div className="text-slate-900 font-black text-sm line-clamp-2">{p.title || "Deal Product"}</div>
 
-                        <div className="text-xs text-slate-500 mt-1">
-                          {catName ? `${catName}  ` : ""}
-                          {bizName}
-                          {stateName ? `  ${stateName}` : ""}
+                        <div className="mt-2 text-xs">
+                          <div className="flex items-center justify-between gap-2 text-slate-600">
+                            <div className="flex items-center gap-1 min-w-0">
+                              <MapPin className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate">{stateName || "Nigeria"}</span>
+                            </div>
+                            {sellerVerified ? (
+                              <div className="flex items-center gap-1 shrink-0 text-emerald-600 font-semibold">
+                                <BadgeCheck className="w-3.5 h-3.5" />
+                                <span>Verified</span>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="mt-1 flex items-center gap-1 text-slate-500">
+                            <Store className="w-3.5 h-3.5 shrink-0" />
+                            <span className="truncate">{bizName || "Seller"}</span>
+                          </div>
                         </div>
 
                         <div className="mt-2 flex items-center justify-between">

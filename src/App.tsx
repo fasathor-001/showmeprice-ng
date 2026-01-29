@@ -36,6 +36,7 @@ import InstitutionPage from "./pages/InstitutionPage";
 import SellerProfileSetupPage from "./pages/SellerProfileSetupPage";
 import VerificationPage from "./pages/account/VerificationPage";
 import EscrowReturnPage from "./pages/EscrowReturnPage";
+import CheckoutPage from "./pages/CheckoutPage";
 
 type HomeMode = "home" | "marketplace" | "product";
 type InboxInit = { chatId?: string; userId?: string; productId?: string } | null;
@@ -274,6 +275,7 @@ export default function App() {
     }
 
     if (path === "/marketplace") return <MarketplacePage />;
+    if (path === "/checkout") return <CheckoutPage />;
 
     // AUTH PAGES (wrapped with AccountShell) — redirects handled in effect
     if (

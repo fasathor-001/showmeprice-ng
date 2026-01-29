@@ -49,6 +49,8 @@ const REPORT_REASONS = [
   { value: "other", label: "Other" },
 ];
 
+const NEW_WINDOW_MS = 48 * 60 * 60 * 1000;
+
 function formatMoneyNGN(v: any) {
   const n = Number(v ?? 0);
   if (!Number.isFinite(n)) return "\u20A60";
@@ -130,6 +132,11 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
   const stateName = (product as any)?.states?.name ? safeText((product as any).states.name) : "";
   const cityName = (product as any)?.city ? safeText((product as any).city) : "";
+  const createdAtDate = createdAt ? new Date(createdAt) : null;
+  const isNew48h =
+    !!createdAtDate &&
+    Number.isFinite(createdAtDate.getTime()) &&
+    Date.now() - createdAtDate.getTime() <= NEW_WINDOW_MS;
 
   // seller fields
   const businessName =
@@ -177,6 +184,17 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
 
 
   const tier = String((product as any)?.seller_verification_tier ?? "").toLowerCase();
+  const businessVerificationStatus = String(
+    (product as any)?.businesses?.verification_status ?? (product as any)?.business?.verification_status ?? ""
+  ).toLowerCase();
+  const businessVerificationTier = String(
+    (product as any)?.businesses?.verification_tier ?? (product as any)?.business?.verification_tier ?? ""
+  ).toLowerCase();
+  const isBusinessVerified =
+    businessVerificationStatus === "verified" ||
+    businessVerificationStatus === "approved" ||
+    businessVerificationTier === "verified" ||
+    businessVerificationTier === "premium";
   const hasSellerBadge =
     typeof (product as any)?.seller_is_verified === "boolean" || !!(product as any)?.seller_verification_tier;
   const isSellerVerified =
@@ -800,6 +818,12 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                   </div>
                 )}
 
+                {isNew48h ? (
+                  <div className="absolute top-4 right-16 bg-slate-900 text-white text-xs font-black px-2.5 py-1 rounded-lg shadow-sm">
+                    NEW
+                  </div>
+                ) : null}
+
                 {hasDiscount && (
                   <div className="absolute top-4 left-4 bg-red-600 text-white px-3 py-1 rounded-lg font-black text-sm shadow-sm">
                     -{discountPercentage}% OFF
@@ -872,13 +896,21 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                 ) : null}
               </div>
 
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-sm text-slate-600">
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-slate-400 mt-0.5" />
-                  <div className="leading-tight">
-                    <div className="font-semibold text-slate-800">{stateName || "State"}</div>
-                    {cityName ? <div className="text-slate-500">{cityName}</div> : null}
+              <div className="flex flex-col gap-2 text-sm text-slate-600">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2">
+                    <MapPin className="w-4 h-4 text-slate-400 mt-0.5" />
+                    <div className="leading-tight">
+                      <div className="font-semibold text-slate-800">{stateName || "State"}</div>
+                      {cityName ? <div className="text-slate-500">{cityName}</div> : null}
+                    </div>
                   </div>
+                  {isBusinessVerified ? (
+                    <div className="flex items-center gap-1 text-emerald-600 text-xs font-bold">
+                      <BadgeCheck className="w-3 h-3" />
+                      Verified
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="flex items-center gap-2">
