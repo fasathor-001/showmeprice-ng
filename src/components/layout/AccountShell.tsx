@@ -80,7 +80,9 @@ function lsGet(key: string) {
 function lsSet(key: string, val: string) {
   try {
     localStorage.setItem(key, val);
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
 }
 
 export default function AccountShell({
@@ -172,10 +174,14 @@ export default function AccountShell({
   const logout = () => {
     try {
       (window as any).logout?.();
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     try {
       window.dispatchEvent(new CustomEvent("smp:logout"));
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     nav("/");
   };
 
@@ -419,7 +425,9 @@ export default function AccountShell({
             onClick={async () => {
               try {
                 await signOut();
-              } catch {}
+              } catch {
+                // intentionally empty
+              }
               nav("/signin");
             }}
           >

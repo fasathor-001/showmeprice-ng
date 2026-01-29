@@ -102,7 +102,9 @@ export default function ProfilePage() {
 
       try {
         await refresh?.();
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
     } catch (e: any) {
       setErr(e?.message || "Failed to save profile.");
     } finally {

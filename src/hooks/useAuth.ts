@@ -12,6 +12,7 @@ type AuthState = {
   error: string | null;
 };
 
+// eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars
 type Listener = (session: Session | null, user: User | null) => void;
 
 let booted = false;

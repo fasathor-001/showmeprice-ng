@@ -107,7 +107,9 @@ function openCreateListingModal() {
   try {
     (window as any).__smp_edit_product = null;
     window.dispatchEvent(new CustomEvent("smp:post-product:open"));
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
   (window as any).openPostItemModal?.();
 }
 
@@ -115,7 +117,9 @@ function openEditListingModal(product: any) {
   try {
     (window as any).__smp_edit_product = product;
     window.dispatchEvent(new CustomEvent("smp:post-product:open"));
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
   (window as any).openPostItemModal?.();
 }
 

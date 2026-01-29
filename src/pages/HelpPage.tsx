@@ -14,7 +14,9 @@ export default function HelpPage() {
     if (!user) {
       try {
         sessionStorage.setItem("smp:post_auth_intent", "inbox");
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
       window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode: "login", reason: "inbox" } }));
       return;
     }

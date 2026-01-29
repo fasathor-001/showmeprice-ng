@@ -132,7 +132,9 @@ export default function SellerDashboard({ onNavigateHome, onPostProduct }: Selle
   const openPostAd = () => {
     try {
       delete (window as any).__smp_post_kind;
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     onPostProduct();
   };
 

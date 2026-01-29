@@ -201,7 +201,9 @@ export function BrandLogo({ className = "w-9 h-9" }: { className?: string }) {
 
   try {
     window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode } }));
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
 
   if (window.location.pathname !== "/") navigateToPath("/");
 }
@@ -236,10 +238,11 @@ export default function Navbar() {
   try {
     const roleSource = roleFromProfile || roleFromUserMeta || roleFromAppMeta;
     if (authUser?.id && roleSource) localStorage.setItem(`smp:role:${authUser.id}`, roleSource);
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
   const profileReady = signedIn && !profileLoading;
   const hasBusiness = profileReady && !!(business as any)?.id;
-  const profileTypeRaw = profileReady && (profile as any)?.user_type ? String((profile as any).user_type).toLowerCase() : "";
   const isAdminRole =
     profileReady &&
     (((profile as any)?.is_admin === true) ||
@@ -417,7 +420,9 @@ export default function Navbar() {
     if (!signedIn) {
       try {
         sessionStorage.setItem("smp:return_to", "/seller/setup");
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
       openAuth("register");
       return;
     }

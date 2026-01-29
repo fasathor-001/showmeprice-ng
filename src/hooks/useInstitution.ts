@@ -84,7 +84,8 @@ export function useInstitution() {
   };
 
   // Create Institution
-  const createInstitution = async (name: string, type: string, address: string) => {
+  const createInstitution = async (name: string, type: string, _address: string) => {
+    void _address;
     if (!user || !supabase) return false;
     try {
       const { data, error } = await supabase

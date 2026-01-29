@@ -71,11 +71,15 @@ export default function VerificationPage() {
           .from("businesses")
           .update({ verification_status: "pending", updated_at: new Date().toISOString() })
           .eq("user_id", user.id);
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
 
       try {
         await refresh?.();
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
 
       setNotice("Verification submitted. We will review it shortly.");
     } catch (e: any) {

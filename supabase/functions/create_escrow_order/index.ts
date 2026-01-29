@@ -123,7 +123,8 @@ serve(async (req) => {
   const body = payload ?? {};
   const productId = normalizeId((body as any)?.product_id);
   const currency = String((body as any)?.currency ?? "NGN").trim() || "NGN";
-  const requestedAmount = Number((body as any).amount_kobo ?? (body as any).amount);
+  const _requestedAmount = Number((body as any).amount_kobo ?? (body as any).amount);
+  void _requestedAmount;
 
   if (!productId) {
     return jsonResponse(400, { error: "product_id is required." });

@@ -72,7 +72,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       try {
         delete (window as any).openPostItemModal;
         delete (window as any).closePostItemModal;
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
     };
   }, []);
 

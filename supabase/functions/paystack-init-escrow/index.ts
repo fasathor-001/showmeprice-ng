@@ -241,7 +241,8 @@ serve(async (req) => {
   };
 
   let authorizationUrl = "";
-  let accessCode = "";
+  let _accessCode = "";
+  void _accessCode;
 
   try {
     const res = await fetch("https://api.paystack.co/transaction/initialize", {
@@ -259,7 +260,7 @@ serve(async (req) => {
     }
 
     authorizationUrl = String(json?.data?.authorization_url ?? "").trim();
-    accessCode = String(json?.data?.access_code ?? "").trim();
+    _accessCode = String(json?.data?.access_code ?? "").trim();
     if (!authorizationUrl) {
       return jsonResponse(500, { error: "Paystack authorization missing." });
     }

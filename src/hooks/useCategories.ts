@@ -7,7 +7,7 @@ import { MOCK_CATEGORIES } from '../constants';
 export function useHubs() {
   const [hubs, setHubs] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchHubs() {

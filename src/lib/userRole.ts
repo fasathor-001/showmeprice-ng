@@ -31,7 +31,9 @@ export function getRoleHint(user?: User | null): EffectiveUserType {
   try {
     const cached = String(localStorage.getItem(`smp:role_hint:${user.id}`) || "").toLowerCase();
     if (cached === "admin" || cached === "seller" || cached === "buyer") return cached as EffectiveUserType;
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
 
   return "unknown";
 }
@@ -41,7 +43,9 @@ export function setRoleHint(userId: string, role: EffectiveUserType) {
   if (role !== "admin" && role !== "seller" && role !== "buyer") return;
   try {
     localStorage.setItem(`smp:role_hint:${userId}`, role);
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
 }
 
 export function getEffectiveUserType(opts: {

@@ -33,10 +33,14 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
   if (!jwt || jwt.split(".").length !== 3) {
     try {
       sessionStorage.setItem("smp:auth_notice", "Session expired. Please sign in again.");
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     try {
       await supabase.auth.signOut();
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     nav("/signin");
     throw new Error("Session expired. Please sign in again.");
   }
@@ -62,7 +66,9 @@ export async function invokeAuthedFunction<TBody extends Record<string, unknown>
             : String(parsed ?? "");
         if (extra) detail = `${detail}: ${extra}`;
       }
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     (result.error as any).message = detail;
   }
 

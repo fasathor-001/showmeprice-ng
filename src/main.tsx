@@ -51,7 +51,9 @@ const smpRefreshLucide = () => {
     if (luc && typeof luc?.createIcons === "function") {
       luc.createIcons();
     }
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
 };
 
 // After initial render

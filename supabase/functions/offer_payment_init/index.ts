@@ -17,10 +17,6 @@ function normalizeId(input: unknown) {
   return String(input ?? "").trim();
 }
 
-function toKobo(amount: number) {
-  return Math.round(amount * 100);
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });

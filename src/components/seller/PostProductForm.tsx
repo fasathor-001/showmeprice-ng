@@ -64,7 +64,7 @@ export default function PostProductForm({ onClose }: Props) {
   const flagsLoading = !!ff?.loading;
   const flagList = (ff?.flags ?? ff?.flagList ?? []) as any[];
 
-  const isEnabled: (key: string) => boolean = ff?.isEnabled
+  const isEnabled = ff?.isEnabled
     ? ff.isEnabled
     : (key: string) => !!getFlagRow(flagList, key)?.enabled;
 
@@ -155,7 +155,9 @@ export default function PostProductForm({ onClose }: Props) {
   const notify = useCallback((message: string, tone: "error" | "success" = "error") => {
     try {
       window.dispatchEvent(new CustomEvent("smp:toast", { detail: { type: tone, message } }));
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     if ((window as any).__smp_toast_global) return;
     setToast({ message, tone });
     if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
@@ -198,13 +200,17 @@ export default function PostProductForm({ onClose }: Props) {
   const clearKindMarker = () => {
     try {
       delete (window as any).__smp_post_kind;
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
   };
 
   const closeModal = () => {
     try {
       (window as any).__smp_edit_product = null;
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     setEditProductId(null);
     setExistingImages([]);
     setSelectedFiles([]);
@@ -462,7 +468,9 @@ export default function PostProductForm({ onClose }: Props) {
       );
       try {
         (window as any).__smp_edit_product = null;
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
       setTimeout(() => closeModal(), 50);
       return;
     }

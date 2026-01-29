@@ -140,7 +140,9 @@ export default function SellerProfileSetupPage() {
       setErr(msg);
       try {
         window.dispatchEvent(new CustomEvent("smp:toast", { detail: { type: "error", message: msg } }));
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
       try {
         window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode: "login" } }));
       } catch {
@@ -223,7 +225,9 @@ export default function SellerProfileSetupPage() {
         if (authUser?.id) {
           localStorage.setItem(`smp:user_type:${authUser.id}`, "seller");
         }
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
 
       // Seller is active after successful save
       window.location.href = "/my-shop";
@@ -235,7 +239,9 @@ export default function SellerProfileSetupPage() {
             detail: { type: "error", message: e?.message || "Failed to save setup." },
           })
         );
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
     } finally {
       setSaving(false);
     }

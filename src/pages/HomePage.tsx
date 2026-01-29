@@ -122,7 +122,9 @@ function setUrlForMode(mode: ViewMode) {
 
     window.history.replaceState(null, "", url);
     window.dispatchEvent(new Event("smp:navigate"));
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
 }
 
 function getProductIdFromUrl(): string | null {
@@ -297,7 +299,9 @@ export default function HomePage() {
   useEffect(() => {
     try {
       sessionStorage.setItem(VIEWMODE_KEY, viewMode);
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     setUrlForMode(viewMode);
   }, [viewMode]);
 
@@ -418,7 +422,9 @@ export default function HomePage() {
       if (!profileLoading && !signedIn) {
         try {
           window.dispatchEvent(new CustomEvent("smp:open-auth", { detail: { mode: "login" } }));
-        } catch {}
+        } catch {
+          // intentionally empty
+        }
         setViewMode("landing");
         return;
       }
@@ -1025,7 +1031,9 @@ export default function HomePage() {
             onPostProduct={() => {
               try {
                 delete (window as any).__smp_post_kind;
-              } catch {}
+              } catch {
+                // intentionally empty
+              }
               const fn = (window as any).openPostItemModal;
               if (typeof fn === "function") fn();
             }}

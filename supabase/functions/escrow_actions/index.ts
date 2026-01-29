@@ -123,7 +123,9 @@ serve(async (req) => {
               const { data } = await supabaseAdmin.auth.admin.getUserById(id);
               const email = String(data?.user?.email ?? "").trim();
               if (email) emailById[id] = email;
-            } catch {}
+            } catch {
+              // intentionally empty
+            }
           })
         );
       }
@@ -265,7 +267,8 @@ serve(async (req) => {
     }
 
     const buyerId = String(order.buyer_id ?? "");
-    const sellerId = String(order.seller_id ?? "");
+    const _sellerId = String(order.seller_id ?? "");
+    void _sellerId;
 
     if (action === "buyer_confirm_delivery") {
       const { data: profRow, error: profErr } = await supabaseAdmin

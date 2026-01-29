@@ -3,6 +3,7 @@ import { ChevronDown, Loader2 } from "lucide-react";
 import { useHubs, useSubcategories } from "../../hooks/useCategories";
 
 interface ProductCategorySelectorProps {
+  // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars
   onCategorySelect: (subcategoryId: number) => void;
   /**
    * Optional: if you are editing a listing and want to preset a subcategory.

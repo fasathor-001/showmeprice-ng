@@ -32,8 +32,8 @@ export default function DealsPage() {
 
   // Feature flags (context)
   const ff: any = useFeatureFlags();
-  const isEnabled: ((k: string) => boolean) | undefined = ff?.isEnabled;
-  const getFlag: ((k: string) => any) | undefined = ff?.getFlag;
+  const isEnabled = ff?.isEnabled;
+  const getFlag = ff?.getFlag;
   const flagList: any[] | undefined = ff?.flagList;
   const flagsLoading: boolean = !!ff?.loading;
   const flagsError: any = ff?.error;
@@ -91,7 +91,9 @@ export default function DealsPage() {
         if (window.location.hash !== "#post-deal") {
           window.history.replaceState({}, "", window.location.pathname + "#post-deal");
         }
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
       setTimeout(scrollToPostDeal, 50);
     };
 
@@ -214,7 +216,8 @@ export default function DealsPage() {
                       disabled={!dealsPostingOn}
                       onClick={() => {
                         // Optional: let your PostProductForm read this later if you want "deal mode"
-                        try { sessionStorage.setItem("smp_post_mode", "deal"); } catch {}
+                        try { sessionStorage.setItem("smp_post_mode", "deal"); } catch { // intentionally empty
+                        }
                         (window as any).openPostItemModal?.();
                       }}
                       className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white font-black text-sm disabled:opacity-60"

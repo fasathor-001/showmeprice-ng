@@ -1,9 +1,8 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
   Bell,
   ChevronRight,
-  Globe,
   LogOut,
   Lock,
   Mail,
@@ -41,7 +40,9 @@ function lsGetBool(userId: string, k: string, fallback: boolean) {
 function lsSetBool(userId: string, k: string, v: boolean) {
   try {
     localStorage.setItem(lsKey(userId, k), v ? "1" : "0");
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
 }
 
 async function safeProfileUpdate(userId: string, patch: Record<string, any>) {
@@ -58,7 +59,8 @@ function Toggle({
   disabled,
 }: {
   value: boolean;
-  onChange: (v: boolean) => void;
+  // eslint-disable-next-line no-unused-vars
+  onChange: (_v: boolean) => void;
   disabled?: boolean;
 }) {
   return (
@@ -107,7 +109,8 @@ export default function SettingsPage() {
   const [disableFeedback, setDisableFeedback] = useState(false);
 
   // language (stored)
-  const [language, setLanguage] = useState("English");
+  const [_language, setLanguage] = useState("English");
+  void _language;
 
   // Security helpers
   const [pwSent, setPwSent] = useState(false);
@@ -146,7 +149,9 @@ export default function SettingsPage() {
       await safeProfileUpdate(userId, patch);
       try {
         await refresh?.();
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
       setSavingNote("Saved");
       setTimeout(() => setSavingNote(null), 1200);
     } catch (e: any) {
@@ -171,25 +176,13 @@ export default function SettingsPage() {
     }
   };
 
-  const updateEmail = async () => {
-    const next = String(emailDraft || "").trim();
-    if (!next) return;
-    setErr(null);
-    try {
-      const { error } = await supabase.auth.updateUser({ email: next });
-      if (error) throw error;
-      setShowEmailEdit(false);
-      setSavingNote("Check your email to confirm");
-      setTimeout(() => setSavingNote(null), 2500);
-    } catch (e: any) {
-      setErr(e?.message || "Failed to update email.");
-    }
-  };
 
   const logout = async () => {
     try {
       await supabase.auth.signOut();
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     nav("/");
   };
 

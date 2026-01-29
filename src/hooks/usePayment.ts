@@ -1,6 +1,5 @@
 
 import { useState } from 'react';
-import { usePaystackPayment } from 'react-paystack';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
 

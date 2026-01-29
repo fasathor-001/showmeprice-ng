@@ -44,13 +44,6 @@ function formatWhen(ts: string) {
 
 export default function AdminFeaturesPage() {
   
-  const navigateToPath = (to: string) => {
-    window.history.pushState({}, "", to);
-    window.dispatchEvent(new Event("smp:navigate"));
-    window.scrollTo(0, 0);
-  };
-
-  const goHome = () => navigateToPath("/");
 const { profile, loading: profileLoading } = useProfile();
   const role = (profile as any)?.role ?? "user";
   const isAdmin = !profileLoading && role === "admin";

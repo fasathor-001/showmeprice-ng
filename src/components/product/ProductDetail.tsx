@@ -88,7 +88,8 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   const buyerTier = String(
     (viewerProfile as any)?.membership_tier ?? (viewerProfile as any)?.membership_1 ?? (viewerTier as any) ?? "free"
   ).toLowerCase();
-  const isBuyerPremium = buyerTier === "premium";
+  const _isBuyerPremium = buyerTier === "premium";
+  void _isBuyerPremium;
 
   // Access rule:
   // Premium - WhatsApp + Phone + INAPP MESSENGER
@@ -312,7 +313,9 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   const setPostAuthIntent = (intent: string) => {
     try {
       sessionStorage.setItem("smp:post_auth_intent", intent);
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     pendingActionRef.current = intent;
   };
 
@@ -331,7 +334,9 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
     pendingActionRef.current = null;
     try {
       sessionStorage.removeItem("smp:post_auth_intent");
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
 
     return intent;
   };
@@ -365,7 +370,9 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
             productId: productId ? String(productId) : null,
           })
         );
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
 
       window.dispatchEvent(
         new CustomEvent("smp:view-inbox", {
@@ -530,7 +537,9 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
         createdAt: Date.now(),
       };
       sessionStorage.setItem("smp:escrow_pending", JSON.stringify(pending));
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
   };
 
   const doPayWithEscrow = async () => {
@@ -607,7 +616,9 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
           createdAt: Date.now(),
         })
       );
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
   };
 
   const ensureAuthForEscrow = async () => {

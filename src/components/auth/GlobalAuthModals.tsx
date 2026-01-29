@@ -21,12 +21,11 @@ type OpenMode = "login" | "register" | "reset";
 export default function GlobalAuthModals() {
   // useAuth may evolve; keep this component resilient
   const auth: any = useAuth();
-  const signIn: (email: string, password: string) => Promise<any> = auth.signIn ?? auth.login;
-  const signUp: (email: string, password: string, options?: { data?: Record<string, any> }) => Promise<any> =
-    auth.signUp ?? auth.register;
+  const signIn = auth.signIn ?? auth.login;
+  const signUp = auth.signUp ?? auth.register;
 
   // Prefer hook resetPassword if present, otherwise fallback to Supabase directly
-  const resetPassword: (email: string) => Promise<void> =
+  const resetPassword =
     auth.resetPassword ??
     (async (email: string) => {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -117,7 +116,9 @@ export default function GlobalAuthModals() {
         delete (window as any).openAuthModal;
         delete (window as any).openForgotPasswordModal;
         delete (window as any).smpOpenAuth;
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
       window.removeEventListener("smp:open-auth", onOpen as any);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -197,7 +198,9 @@ export default function GlobalAuthModals() {
             detail: { type: "error", message: error?.message || "Profile setup failed." },
           })
         );
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
       return { ok: false, reason: "error" };
     }
   };
@@ -319,7 +322,9 @@ export default function GlobalAuthModals() {
               detail: { type: "info", message: "Check your email to confirm your account." },
             })
           );
-        } catch {}
+        } catch {
+          // intentionally empty
+        }
         return;
       }
 

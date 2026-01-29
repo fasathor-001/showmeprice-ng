@@ -27,7 +27,9 @@ type Ctx = {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
+  // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars
   getFlag: (key: FeatureFlagKey) => FeatureFlagRow | undefined;
+  // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars
   isEnabled: (key: FeatureFlagKey) => boolean;
 };
 
@@ -83,21 +85,28 @@ export function FeatureFlagsProvider({ children }: { children: React.ReactNode }
       if (!Array.isArray(data)) {
         setFlags([]);
         
-try { window.dispatchEvent(new Event("smp:flags-updated")); } catch {}
-try { window.dispatchEvent(new Event("smp:flags-updated")); try { window.dispatchEvent(new Event("smp:flags-updated")); } catch {}
-} catch {}
+try { window.dispatchEvent(new Event("smp:flags-updated")); } catch { // intentionally empty
+}
+try { window.dispatchEvent(new Event("smp:flags-updated")); try { window.dispatchEvent(new Event("smp:flags-updated")); } catch { // intentionally empty
+}
+} catch { // intentionally empty
+}
 setError("feature_flags returned unexpected data (not an array). Check RLS/policies.");
         return;
       }
 
       setFlags(data as FeatureFlagRow[]);
-    try { window.dispatchEvent(new Event("smp:flags-updated")); try { window.dispatchEvent(new Event("smp:flags-updated")); } catch {}
-} catch {}
+    try { window.dispatchEvent(new Event("smp:flags-updated")); try { window.dispatchEvent(new Event("smp:flags-updated")); } catch { // intentionally empty
+}
+} catch { // intentionally empty
+}
 } catch (e: any) {
       console.error("FeatureFlags fetch failed:", e);
       setFlags([]);
-      try { window.dispatchEvent(new Event("smp:flags-updated")); try { window.dispatchEvent(new Event("smp:flags-updated")); } catch {}
-} catch {}
+      try { window.dispatchEvent(new Event("smp:flags-updated")); try { window.dispatchEvent(new Event("smp:flags-updated")); } catch { // intentionally empty
+}
+} catch { // intentionally empty
+}
 setError(e?.message ?? String(e));
     } finally {
       setLoading(false);

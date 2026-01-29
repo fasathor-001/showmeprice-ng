@@ -49,21 +49,17 @@ function getCache(): Cache | null {
 function setCache(c: Cache | null) {
   try {
     (window as any).__SMP_PROFILE_CACHE__ = c;
-  } catch {}
-}
-
-function getCachedUserType(userId: string): string {
-  try {
-    return String(localStorage.getItem(`smp:user_type:${userId}`) || "");
   } catch {
-    return "";
+    // intentionally empty
   }
 }
 
 function setCachedUserType(userId: string, t: string) {
   try {
     localStorage.setItem(`smp:user_type:${userId}`, t);
-  } catch {}
+  } catch {
+    // intentionally empty
+  }
 }
 
 async function getAuthedUserId(): Promise<string | null> {
@@ -141,7 +137,9 @@ export function useProfile() {
           const parsedState = Number(rawState);
           metaStateId = Number.isFinite(parsedState) ? parsedState : null;
           metaBusinessName = String((userData as any)?.user?.user_metadata?.business_name ?? "");
-        } catch {}
+        } catch {
+          // intentionally empty
+        }
 
         const cleanName = metaName.trim();
         const baseProfile = {
@@ -172,7 +170,9 @@ export function useProfile() {
               },
               { onConflict: "id" }
             );
-          } catch {}
+          } catch {
+            // intentionally empty
+          }
         }
 
         try {
@@ -224,7 +224,9 @@ export function useProfile() {
           .eq("seller_id", userId)
           .maybeSingle();
         if (!vErr && vRow?.status) verificationStatus = String(vRow.status);
-      } catch {}
+      } catch {
+        // intentionally empty
+      }
 
       const mergedProfile = {
         ...(resolvedProfile as any),

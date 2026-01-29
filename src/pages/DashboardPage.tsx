@@ -341,7 +341,9 @@ export default function DashboardPage() {
     // ✅ Do NOT change user_type yet. Let user confirm on Seller setup screen.
     try {
       localStorage.setItem(PENDING_BECOME_SELLER_KEY, "1");
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
     nav("/seller/setup?intent=become-seller");
   };
 

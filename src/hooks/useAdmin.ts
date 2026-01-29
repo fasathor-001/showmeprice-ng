@@ -16,12 +16,6 @@ async function safeCount(table: string): Promise<number> {
   return count ?? 0;
 }
 
-async function safeQuery<T = any>(table: string, select = "*") {
-  const { data, error } = await supabase.from(table).select(select);
-  if (error) throw error;
-  return (data ?? []) as T[];
-}
-
 export function useAdmin(enabled = true) {
   const [stats, setStats] = useState<AdminStats>({
     users: 0,

@@ -17,7 +17,6 @@ export default function AdminApprovalsPage() {
     approveSeller,
     approveSellers,
     rejectSeller,
-    refresh,
   } = useAdmin(isAdmin);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);

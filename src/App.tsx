@@ -69,7 +69,8 @@ function parseHomeModeFromUrl(): { mode: HomeMode; productId: string | null } {
 }
 
 export default function App() {
-  const { user } = useAuth();
+  const { user: _user } = useAuth();
+  void _user;
   const FF = useFF() as any;
 
   const path = useCurrentPath();
@@ -118,7 +119,6 @@ export default function App() {
 
   // ✅ CRITICAL: keep App in sync with URL changes (pushState/back/forward/menu clicks)
   useEffect(() => {
-    const u = new URL(window.location.href);
     const p = window.location.pathname;
 
     if (p === "/" || p === "/home") {
@@ -198,7 +198,9 @@ export default function App() {
         let cachedType = "";
         try {
           cachedType = uid ? String(localStorage.getItem(`smp:user_type:${uid}`) || "") : "";
-        } catch {}
+        } catch {
+          // intentionally empty
+        }
         const resolvedType = String(profileType || cachedType || "").toLowerCase();
         const isSeller = resolvedType === "seller";
 
@@ -206,7 +208,9 @@ export default function App() {
         if (profileType) {
           try {
             localStorage.setItem(`smp:user_type:${uid}`, profileType);
-          } catch {}
+          } catch {
+            // intentionally empty
+          }
         }
 
         if (alive) setIsSellerAccount(isSeller);

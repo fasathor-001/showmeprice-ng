@@ -6,7 +6,8 @@ type EscrowCTAProps = {
   productId: string;
   price: number;
   title?: string;
-  onSuccess?: (result: EscrowPaymentInitResult) => void;
+  // eslint-disable-next-line no-unused-vars
+  onSuccess?: (_result: EscrowPaymentInitResult) => void;
 };
 
 function formatNaira(value: number) {

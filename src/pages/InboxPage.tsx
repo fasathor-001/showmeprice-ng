@@ -144,7 +144,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
 
   const {
     loading,
-    loadingThreadId,
+    loadingThreadId: _loadingThreadId,
     messagesByConversationId,
     error,
     conversations,
@@ -163,7 +163,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
   const [ensuringConversation, setEnsuringConversation] = useState(false);
 
   const [compose, setCompose] = useState<InboxInit | null>(null);
-  const [hasBusiness, setHasBusiness] = useState<boolean | null>(null);
+  const [hasBusiness, _setHasBusiness] = useState<boolean | null>(null);
   const convIdByKeyRef = useRef<Record<string, string>>({});
 
   const [nameById, setNameById] = useState<Record<string, string>>({});
@@ -386,7 +386,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
     return String(created.id);
   };
 
-  const onPickConversation = async (conversationId: string, partnerId: string, productId: string | null) => {
+  const onPickConversation = async (conversationId: string, partnerId: string, _productId: string | null) => {
     setCompose(null);
     setCurrentPartnerId(partnerId);
     await loadThread(conversationId);
@@ -459,7 +459,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
         const raw = sessionStorage.getItem("smp:view-inbox");
         init = normalizeInboxInit(raw ? JSON.parse(raw) : null);
       } catch {
-        init = null;
+        // intentionally empty
       }
     }
 
@@ -488,7 +488,9 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
 
     try {
       sessionStorage.removeItem("smp:view-inbox");
-    } catch {}
+    } catch {
+      // intentionally empty
+    }
   }, [user?.id, messagingEnabled, initialChat, ensureConversationId, loadThread]);
 
   if (!user?.id) {
