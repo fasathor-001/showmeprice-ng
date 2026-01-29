@@ -1,4 +1,4 @@
-﻿-- Ensure offers table has expected amount columns (kobo)
+-- Ensure offers table has expected amount columns (kobo)
 alter table public.offers
   add column if not exists offer_amount_kobo bigint;
 
