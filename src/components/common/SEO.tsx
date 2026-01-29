@@ -8,7 +8,7 @@ interface SEOProps {
   image?: string;
   url?: string;
   type?: string;
-  schema?: Record<string, any>;
+  schema?: Record<string, unknown>;
 }
 
 export default function SEO({ 

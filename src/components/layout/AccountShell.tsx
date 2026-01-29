@@ -41,14 +41,14 @@ function useCurrentPath() {
   useEffect(() => {
     const onChange = () => setPath(normalizePath(window.location.pathname || "/"));
     const onNavigate = (ev: Event) => {
-      const detail = (ev as CustomEvent)?.detail as { to?: string } | undefined;
+      const detail = (ev as CustomEvent<{ to?: string }>).detail;
       setPath(normalizePath(detail?.to ?? (window.location.pathname || "/")));
     };
     window.addEventListener("popstate", onChange);
-    window.addEventListener("smp:navigate", onNavigate as any);
+    window.addEventListener("smp:navigate", onNavigate as EventListener);
     return () => {
       window.removeEventListener("popstate", onChange);
-      window.removeEventListener("smp:navigate", onNavigate as any);
+      window.removeEventListener("smp:navigate", onNavigate as EventListener);
     };
   }, []);
   return path;
@@ -93,8 +93,15 @@ export default function AccountShell({
   children: React.ReactNode;
 }) {
   const { user, authReady, signOut } = useAuth();
-  const { profile, business, loading: profileLoading, error: profileError } = useProfile() as any;
-  const FF = useFF() as any;
+  const { profile, business, loading: profileLoading, error: profileError } = useProfile() as {
+    profile?: Record<string, unknown> | null;
+    business?: Record<string, unknown> | null;
+    loading: boolean;
+    error: unknown;
+  };
+  const FF = useFF() as Record<string, unknown>;
+  const profileData = profile ?? null;
+  const businessData = business ?? null;
 
   const path = useCurrentPath();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -120,26 +127,23 @@ export default function AccountShell({
   //  Stable user_type/role (prevents Buyer->Seller flicker on refresh)
   // ---------------------------
   const profileReady = !!user && !profileLoading;
-  const profileRoleRaw = profileReady && (profile as any)?.role ? String((profile as any).role).toLowerCase() : "";
-  const profileTypeRaw =
-    profileReady && (profile as any)?.user_type ? String((profile as any).user_type).toLowerCase() : "";
+  const profileRoleRaw = profileReady && profileData?.role ? String(profileData.role).toLowerCase() : "";
+  const profileTypeRaw = profileReady && profileData?.user_type ? String(profileData.user_type).toLowerCase() : "";
 
-  const authRoleRaw = (user as any)?.user_metadata?.role
-    ? String((user as any).user_metadata.role).toLowerCase()
-    : "";
-  const appRoleRaw = (user as any)?.app_metadata?.role
-    ? String((user as any).app_metadata.role).toLowerCase()
-    : "";
+  const userMeta = (user?.user_metadata as Record<string, unknown> | null) ?? null;
+  const appMeta = (user?.app_metadata as Record<string, unknown> | null) ?? null;
+  const authRoleRaw = userMeta?.role ? String(userMeta.role).toLowerCase() : "";
+  const appRoleRaw = appMeta?.role ? String(appMeta.role).toLowerCase() : "";
 
   const cachedRole = user?.id ? lsGet(`smp:role:${user.id}`) : "";
 
   const role = String(profileRoleRaw || authRoleRaw || appRoleRaw || cachedRole || "").toLowerCase();
-  const hasBusiness = profileReady && !!(business as any)?.id;
+  const hasBusiness = profileReady && !!businessData?.id;
   const profileIsAdmin =
     profileReady &&
-    ((profile as any)?.is_admin === true ||
-      String((profile as any)?.role ?? "").toLowerCase() === "admin" ||
-      String((profile as any)?.user_type ?? "").toLowerCase() === "admin");
+    (profileData?.is_admin === true ||
+      String(profileData?.role ?? "").toLowerCase() === "admin" ||
+      String(profileData?.user_type ?? "").toLowerCase() === "admin");
   const isAdminRole = profileReady && (role === "admin" || profileIsAdmin);
   const accountStatus = getAccountStatus({
     profile,
@@ -159,7 +163,7 @@ export default function AccountShell({
     if (userType && (profileTypeRaw || hasBusiness)) lsSet(`smp:user_type:${user.id}`, userType);
     const roleSource = profileRoleRaw || authRoleRaw || appRoleRaw;
     if (roleSource) lsSet(`smp:role:${user.id}`, roleSource);
-    if (userType) setRoleHint(user.id, userType as any);
+    if (userType) setRoleHint(user.id, userType as unknown as string);
   }, [user?.id, accountStatus.ready, profileTypeRaw, hasBusiness, userType, profileRoleRaw, authRoleRaw, appRoleRaw]);
 
   // Feature flags (useFF already maps to canonical keys)
@@ -173,7 +177,8 @@ export default function AccountShell({
 
   const logout = () => {
     try {
-      (window as any).logout?.();
+      const w = window as Window & { logout?: () => void };
+      w.logout?.();
     } catch {
       // intentionally empty
     }
@@ -217,7 +222,10 @@ export default function AccountShell({
       {
         key: "season",
         label: dealsPostingEnabled
-          ? String((FF as any)?.deals_posting_enabled?.description || "Season")
+          ? String(
+              ((FF.deals_posting_enabled as Record<string, unknown> | undefined)?.description as string | undefined) ||
+                "Season"
+            )
           : "Season",
         to: "/deals",
         icon: Tag,
@@ -294,7 +302,7 @@ export default function AccountShell({
       .filter((sec) => sec.items.length > 0);
 
     return sections;
-  }, [user, isSeller, isAdmin, messagingEnabled, unread]);
+  }, [user, isSeller, messagingEnabled, unread]);
 
   const bottomTabs: Item[] = useMemo(() => {
     return [
@@ -348,19 +356,19 @@ export default function AccountShell({
       nav("/account/admin");
       return;
     }
-    const type = String((profile as any)?.user_type ?? "").toLowerCase();
+    const type = String(profileData?.user_type ?? "").toLowerCase();
     if (type === "seller") {
       nav("/account/seller");
       return;
     }
     nav("/account/dashboard");
-  }, [authReady, user, profileLoading, profileError, isAdmin, profile, path]);
+  }, [authReady, user, profileLoading, profileError, isAdmin, profileData?.user_type, path]);
 
-  const fullNameRaw = String((profile as any)?.full_name ?? "").trim();
-  const phoneRaw = String((profile as any)?.phone_number ?? (profile as any)?.phone ?? "").trim();
-  const cityRaw = String((profile as any)?.city ?? "").trim();
-  const stateIdRaw = (profile as any)?.state_id;
-  const stateRaw = String((profile as any)?.state ?? "").trim();
+  const fullNameRaw = String(profileData?.full_name ?? "").trim();
+  const phoneRaw = String(profileData?.phone_number ?? profileData?.phone ?? "").trim();
+  const cityRaw = String(profileData?.city ?? "").trim();
+  const stateIdRaw = profileData?.state_id;
+  const stateRaw = String(profileData?.state ?? "").trim();
   const fullNameOk =
     !!fullNameRaw &&
     fullNameRaw.toLowerCase() !== "new user" &&
@@ -371,8 +379,7 @@ export default function AccountShell({
   const baseComplete = fullNameOk && phoneOk && cityOk && stateOk;
   const sellerBusinessOk = !isSeller
     ? true
-    : !!String((business as any)?.business_name ?? "").trim() &&
-      !!String((business as any)?.address ?? "").trim();
+    : !!String(businessData?.business_name ?? "").trim() && !!String(businessData?.address ?? "").trim();
   const profileComplete = baseComplete && sellerBusinessOk;
   const needsSellerSetup = isSeller && !sellerBusinessOk;
 
@@ -388,7 +395,7 @@ export default function AccountShell({
       return;
     }
     nav("/profile");
-  }, [authReady, user, profileLoading, profileError, profileComplete, path]);
+  }, [authReady, user, profileLoading, profileError, profileComplete, path, needsSellerSetup]);
 
   const goBack = () => {
     try {

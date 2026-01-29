@@ -14,10 +14,10 @@ function useCurrentPath() {
   useEffect(() => {
     const onNav = () => setPath(window.location.pathname);
     window.addEventListener("popstate", onNav);
-    window.addEventListener("smp:navigate", onNav as any);
+    window.addEventListener("smp:navigate", onNav as EventListener);
     return () => {
       window.removeEventListener("popstate", onNav);
-      window.removeEventListener("smp:navigate", onNav as any);
+      window.removeEventListener("smp:navigate", onNav as EventListener);
     };
   }, []);
 
@@ -52,15 +52,20 @@ export default function Layout({ children }: LayoutProps) {
   const closePostItemModal = () => setIsPostItemOpen(false);
 
   useEffect(() => {
-    (window as any).openPostItemModal = openPostItemModal;
-    (window as any).closePostItemModal = closePostItemModal;
-    (window as any).__smp_toast_global = true;
+    const w = window as Window & {
+      openPostItemModal?: () => void;
+      closePostItemModal?: () => void;
+      __smp_toast_global?: boolean;
+    };
+    w.openPostItemModal = openPostItemModal;
+    w.closePostItemModal = closePostItemModal;
+    w.__smp_toast_global = true;
 
     return () => {
       try {
-        delete (window as any).openPostItemModal;
-        delete (window as any).closePostItemModal;
-        delete (window as any).__smp_toast_global;
+        delete w.openPostItemModal;
+        delete w.closePostItemModal;
+        delete w.__smp_toast_global;
       } catch {
         // ignore
       }
@@ -69,7 +74,7 @@ export default function Layout({ children }: LayoutProps) {
 
   useEffect(() => {
     const onToast = (event: Event) => {
-      const detail = (event as CustomEvent<any>)?.detail ?? {};
+      const detail = (event as CustomEvent<Record<string, unknown>>).detail ?? {};
       const message = String(detail.message ?? "").trim();
       if (!message) return;
       const type =

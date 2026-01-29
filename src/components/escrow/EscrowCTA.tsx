@@ -36,8 +36,9 @@ export default function EscrowCTA({ productId, price, title, onSuccess }: Escrow
       .limit(1);
     if (qErr) throw qErr;
 
-    const row = data?.[0] ?? null;
-    const uid = String((row as any)?.businesses?.user_id ?? "").trim();
+    const row = (data?.[0] as Record<string, unknown> | null) ?? null;
+    const businesses = (row?.businesses as Record<string, unknown> | null) ?? null;
+    const uid = String(businesses?.user_id ?? "").trim();
     if (!uid) return null;
 
     setSellerId(uid);
@@ -67,8 +68,9 @@ export default function EscrowCTA({ productId, price, title, onSuccess }: Escrow
 
       onSuccess?.(result);
       window.location.href = result.authorizationUrl;
-    } catch (e: any) {
-      setError(e?.message ?? "Failed to start escrow payment.");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Failed to start escrow payment.";
+      setError(message);
     } finally {
       setLoading(false);
     }

@@ -17,12 +17,14 @@ import { useStates } from "../../hooks/useStates";
 import { supabase } from "../../lib/supabase";
 
 type OpenMode = "login" | "register" | "reset";
+// eslint-disable-next-line no-unused-vars
+type AuthFn = (...args: unknown[]) => Promise<Record<string, unknown>>;
 
 export default function GlobalAuthModals() {
   // useAuth may evolve; keep this component resilient
-  const auth: any = useAuth();
-  const signIn = auth.signIn ?? auth.login;
-  const signUp = auth.signUp ?? auth.register;
+  const auth = useAuth() as Record<string, unknown>;
+  const signIn = (auth.signIn ?? auth.login) as AuthFn;
+  const signUp = (auth.signUp ?? auth.register) as AuthFn;
 
   // Prefer hook resetPassword if present, otherwise fallback to Supabase directly
   const resetPassword =
@@ -95,31 +97,38 @@ export default function GlobalAuthModals() {
   // ✅ Global openers (Navbar + any component can call these)
   useEffect(() => {
     // old API (keep for backward compatibility)
-    (window as any).openRegisterModal = () => openWith("register");
-    (window as any).openAuthModal = () => openWith("login");
-    (window as any).openForgotPasswordModal = () => openWith("reset");
+    const w = window as Window & {
+      openRegisterModal?: () => void;
+      openAuthModal?: () => void;
+      openForgotPasswordModal?: () => void;
+      // eslint-disable-next-line no-unused-vars
+      smpOpenAuth?: (...args: [OpenMode]) => void;
+    };
+    w.openRegisterModal = () => openWith("register");
+    w.openAuthModal = () => openWith("login");
+    w.openForgotPasswordModal = () => openWith("reset");
 
     // ✅ new unified API (Navbar uses this as strongest fallback)
-    (window as any).smpOpenAuth = (mode: OpenMode) => openWith(mode);
+    w.smpOpenAuth = (mode: OpenMode) => openWith(mode);
 
     // ✅ listen to events (Navbar dispatches this)
     const onOpen = (e: Event) => {
-      const detail = (e as CustomEvent)?.detail;
-      const mode = (detail?.mode as OpenMode | undefined) ?? "login";
+      const detail = (e as CustomEvent<{ mode?: OpenMode }>).detail;
+      const mode = detail?.mode ?? "login";
       if (mode === "login" || mode === "register" || mode === "reset") openWith(mode);
     };
-    window.addEventListener("smp:open-auth", onOpen as any);
+    window.addEventListener("smp:open-auth", onOpen as EventListener);
 
     return () => {
       try {
-        delete (window as any).openRegisterModal;
-        delete (window as any).openAuthModal;
-        delete (window as any).openForgotPasswordModal;
-        delete (window as any).smpOpenAuth;
+        delete w.openRegisterModal;
+        delete w.openAuthModal;
+        delete w.openForgotPasswordModal;
+        delete w.smpOpenAuth;
       } catch {
         // intentionally empty
       }
-      window.removeEventListener("smp:open-auth", onOpen as any);
+      window.removeEventListener("smp:open-auth", onOpen as EventListener);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -179,7 +188,7 @@ export default function GlobalAuthModals() {
 
       const email = String(user.email ?? "");
       const emailPrefix = email.includes("@") ? email.split("@")[0] : email;
-      const meta = (user.user_metadata as any) ?? {};
+      const meta = (user.user_metadata as Record<string, unknown> | null) ?? {};
       const derivedName = String(meta.full_name || meta.name || emailPrefix || "User").trim();
 
       const { error: insErr } = await supabase.from("profiles").insert({
@@ -190,12 +199,13 @@ export default function GlobalAuthModals() {
       });
       if (insErr) throw insErr;
       return { ok: true };
-    } catch (error: any) {
-      console.error("profiles ensureProfile error", error);
+    } catch (error: unknown) {
+      const err = error instanceof Error ? error : new Error("Profile setup failed.");
+      console.error("profiles ensureProfile error", err);
       try {
         window.dispatchEvent(
           new CustomEvent("smp:toast", {
-            detail: { type: "error", message: error?.message || "Profile setup failed." },
+            detail: { type: "error", message: err.message || "Profile setup failed." },
           })
         );
       } catch {
@@ -336,32 +346,35 @@ export default function GlobalAuthModals() {
             setAuthError("Please sign in to continue.");
             return;
           }
-        } catch (err: any) {
-          console.error("Profile upsert failed after sign up:", err);
-          setAuthError(err?.message || "Signup completed, but profile setup failed.");
-          return;
-        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Signup completed, but profile setup failed.";
+        console.error("Profile upsert failed after sign up:", err);
+        setAuthError(message);
+        return;
+      }
 
         closeRegisterModal();
-        const isSeller = (data.user?.user_metadata as any)?.user_type === "seller";
+      const meta = (data.user?.user_metadata as Record<string, unknown> | null) ?? null;
+      const isSeller = meta?.user_type === "seller";
         navigateToAccount();
         navigateToHomeAndMaybeDashboard(!!isSeller);
         return;
       }
 
       setAuthError("Signup completed but no session was created. Please check your email.");
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to register. Please try again.";
       console.error("Registration error:", err);
-      const msg = (err?.message || "").toLowerCase();
+      const msg = message.toLowerCase();
 
       if (msg.includes("already registered") || msg.includes("already exists")) {
         setAuthError("This email is already registered. Try logging in.");
       } else if (msg.includes("invalid email")) {
         setAuthError("Please enter a valid email address.");
       } else if (msg.includes("password")) {
-        setAuthError(err?.message || "Password is not accepted. Try a stronger password.");
+        setAuthError(message || "Password is not accepted. Try a stronger password.");
       } else {
-        setAuthError(err?.message || "Failed to register. Please try again.");
+        setAuthError(message || "Failed to register. Please try again.");
       }
     } finally {
       setAuthLoading(false);
@@ -385,14 +398,15 @@ export default function GlobalAuthModals() {
 
       // If some odd flow returns no session:
       setAuthError("Login completed but no session was created. Please try again.");
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Invalid email or password.";
       console.error("Login error:", err);
 
-      const msg = (err?.message || "").toLowerCase();
+      const msg = message.toLowerCase();
       if (msg.includes("invalid login credentials")) {
         setAuthError("Incorrect login credentials.");
       } else {
-        setAuthError(err?.message || "Invalid email or password.");
+        setAuthError(message || "Invalid email or password.");
       }
     } finally {
       setAuthLoading(false);
@@ -408,9 +422,10 @@ export default function GlobalAuthModals() {
       const email = forgotEmail.trim();
       await resetPassword(email);
       setForgotSuccess(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to send reset email.";
       console.error("Reset password error:", err);
-      setAuthError(err?.message || "Failed to send reset email.");
+      setAuthError(message);
     } finally {
       setAuthLoading(false);
     }
@@ -580,9 +595,9 @@ export default function GlobalAuthModals() {
                       onChange={(e) => setRegForm({ ...regForm, sellerState: e.target.value })}
                     >
                       <option value="">Select State</option>
-                      {statesOptions.map((s: any) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
+                      {statesOptions.map((s: Record<string, unknown>) => (
+                        <option key={String(s.id ?? "")} value={String(s.id ?? "")}>
+                          {String(s.name ?? "")}
                         </option>
                       ))}
                     </select>

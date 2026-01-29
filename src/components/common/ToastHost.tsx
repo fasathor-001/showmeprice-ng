@@ -10,7 +10,7 @@ export default function ToastHost() {
 
   useEffect(() => {
     const onToast = (event: Event) => {
-      const detail = (event as CustomEvent<any>)?.detail ?? {};
+      const detail = (event as CustomEvent<Record<string, unknown>>).detail ?? {};
       const message = String(detail.message ?? "").trim();
       if (!message) return;
       const type: ToastType =

@@ -46,14 +46,14 @@ function useCurrentPath() {
   useEffect(() => {
     const onChange = () => setPath(window.location.pathname || "/");
     const onNavigate = (ev: Event) => {
-      const detail = (ev as CustomEvent)?.detail as { to?: string } | undefined;
+      const detail = (ev as CustomEvent<{ to?: string }>).detail;
       setPath(detail?.to ?? (window.location.pathname || "/"));
     };
     window.addEventListener("popstate", onChange);
-    window.addEventListener("smp:navigate", onNavigate as any);
+    window.addEventListener("smp:navigate", onNavigate as EventListener);
     return () => {
       window.removeEventListener("popstate", onChange);
-      window.removeEventListener("smp:navigate", onNavigate as any);
+      window.removeEventListener("smp:navigate", onNavigate as EventListener);
     };
   }, []);
   return path;
@@ -71,7 +71,7 @@ function parseHomeModeFromUrl(): { mode: HomeMode; productId: string | null } {
 export default function App() {
   const { user: _user } = useAuth();
   void _user;
-  const FF = useFF() as any;
+  const FF = useFF() as Record<string, unknown>;
 
   const path = useCurrentPath();
 
@@ -140,17 +140,17 @@ export default function App() {
 
   // ✅ allow deep-link to inbox chat via event
   useEffect(() => {
-    const onOpenInbox = (ev: any) => {
-      const detail = (ev?.detail || {}) as any;
+    const onOpenInbox = (ev: Event) => {
+      const detail = ((ev as CustomEvent<Record<string, unknown>>).detail || {}) as Record<string, unknown>;
       setInboxInit({
-        chatId: detail.chatId,
-        userId: detail.userId,
-        productId: detail.productId,
+        chatId: typeof detail.chatId === "string" ? detail.chatId : undefined,
+        userId: typeof detail.userId === "string" ? detail.userId : undefined,
+        productId: typeof detail.productId === "string" ? detail.productId : undefined,
       });
       smpNavigate("/inbox");
     };
-    window.addEventListener("smp:view-inbox", onOpenInbox as any);
-    return () => window.removeEventListener("smp:view-inbox", onOpenInbox as any);
+    window.addEventListener("smp:view-inbox", onOpenInbox as EventListener);
+    return () => window.removeEventListener("smp:view-inbox", onOpenInbox as EventListener);
   }, []);
 
   // Auth route aliases (/signin, /sign-in, /login)
@@ -226,7 +226,7 @@ export default function App() {
           !profileRow?.full_name ||
           !profileRow?.phone_number ||
           !profileRow?.city ||
-          !(profileRow as any)?.state_id;
+          !(profileRow as Record<string, unknown>)?.state_id;
 
         if (alive) setSellerNeedsSetup(!!needs);
       } catch {
@@ -320,7 +320,7 @@ export default function App() {
     if (path === "/inbox") {
       return (
         <AccountShell title="Messages">
-          <InboxPage initialChat={inboxInit as any} />
+          <InboxPage initialChat={inboxInit as unknown as { partnerId?: string; productId?: string | null } | null} />
         </AccountShell>
       );
     }

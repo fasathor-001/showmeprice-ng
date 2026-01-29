@@ -10,9 +10,9 @@ export default function DealsPostingCTA() {
   const { isEnabled, loading, getFlag } = useFeatureFlags();
 
   const isSeller =
-    (user?.user_metadata as any)?.user_type === "seller" ||
-    (profile as any)?.user_type === "seller" ||
-    (profile as any)?.role === "seller";
+    (user?.user_metadata as Record<string, unknown> | null)?.user_type === "seller" ||
+    (profile as Record<string, unknown> | null)?.user_type === "seller" ||
+    (profile as Record<string, unknown> | null)?.role === "seller";
 
   const dealsLive = !loading && !!isEnabled?.("deals_enabled");
   const dealsPostingOpen = !loading && !!isEnabled?.("deals_posting_enabled");
@@ -26,9 +26,10 @@ export default function DealsPostingCTA() {
 
   const openPostDeal = () => {
     // mark as deal post
-    (window as any).__smp_post_kind = "deal";
+    const w = window as Window & { __smp_post_kind?: string; openPostItemModal?: () => void };
+    w.__smp_post_kind = "deal";
 
-    const fn = (window as any).openPostItemModal;
+    const fn = w.openPostItemModal;
     if (typeof fn === "function") {
       fn();
       return;
@@ -41,7 +42,7 @@ export default function DealsPostingCTA() {
 
     // try again after route switch
     setTimeout(() => {
-      const retry = (window as any).openPostItemModal;
+      const retry = w.openPostItemModal;
       if (typeof retry === "function") retry();
     }, 50);
   };

@@ -111,11 +111,11 @@ function navigateTo(path: string) {
 }
 
 export default function MobileBottomNav() {
-  const { profile } = useProfile();
+  const { profile } = useProfile() as { profile?: Record<string, unknown> | null };
   const { isEnabled } = useFeatureFlags();
 
-  const role = ((profile as any)?.role ?? "user") as string;
-  const userType = ((profile as any)?.user_type ?? (profile as any)?.userType ?? "buyer") as string;
+  const role = String(profile?.role ?? "user");
+  const userType = String(profile?.user_type ?? profile?.userType ?? "buyer");
 
   const isAdmin = role === "admin";
   const isSeller = role === "seller" || userType === "seller";
@@ -126,11 +126,11 @@ export default function MobileBottomNav() {
     const onChange = () => setPath(window.location.pathname);
 
     window.addEventListener("popstate", onChange);
-    window.addEventListener("smp:navigate", onChange as any);
+    window.addEventListener("smp:navigate", onChange as EventListener);
 
     return () => {
       window.removeEventListener("popstate", onChange);
-      window.removeEventListener("smp:navigate", onChange as any);
+      window.removeEventListener("smp:navigate", onChange as EventListener);
     };
   }, []);
 
@@ -163,7 +163,7 @@ export default function MobileBottomNav() {
     return base.filter((it) => {
       if (it.sellerOnly && !isSeller) return false;
       if (it.adminOnly && !isAdmin) return false;
-      if (it.flagKey) return !!isEnabled(it.flagKey as any);
+      if (it.flagKey) return !!isEnabled(String(it.flagKey));
       return true;
     });
   }, [isSeller, isAdmin, isEnabled]);

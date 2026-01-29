@@ -56,7 +56,13 @@ function normalizePath(path: string) {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut } = useAuth();
-  const { profile, business, loading: profileLoading } = useProfile() as any;
+  const { profile, business, loading: profileLoading } = useProfile() as {
+    profile?: Record<string, unknown> | null;
+    business?: Record<string, unknown> | null;
+    loading: boolean;
+  };
+  const profileData = profile ?? null;
+  const businessData = business ?? null;
 
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -66,12 +72,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const closePostItemModal = () => setIsPostItemOpen(false);
 
   useEffect(() => {
-    (window as any).openPostItemModal = openPostItemModal;
-    (window as any).closePostItemModal = closePostItemModal;
+    const w = window as Window & { openPostItemModal?: () => void; closePostItemModal?: () => void };
+    w.openPostItemModal = openPostItemModal;
+    w.closePostItemModal = closePostItemModal;
     return () => {
       try {
-        delete (window as any).openPostItemModal;
-        delete (window as any).closePostItemModal;
+        delete w.openPostItemModal;
+        delete w.closePostItemModal;
       } catch {
         // intentionally empty
       }
@@ -100,8 +107,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pageTitle = titleForPath(pathname);
 
   const profileReady = !!user && !profileLoading;
-  const hasBusiness = profileReady && !!(business as any)?.id;
-  const isAdminRole = profileReady && String((profile as any)?.role ?? "").toLowerCase() === "admin";
+  const hasBusiness = profileReady && !!businessData?.id;
+  const isAdminRole = profileReady && String(profileData?.role ?? "").toLowerCase() === "admin";
   const accountStatus = getAccountStatus({
     profile,
     user,
@@ -110,16 +117,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     profileLoaded: profileReady,
   });
   const userType = accountStatus.ready ? accountStatus.effectiveType : null;
-  const membership = String((profile as any)?.membership_tier ?? "free").toLowerCase();
+  const membership = String(profileData?.membership_tier ?? "free").toLowerCase();
   const tierLabel =
     membership === "premium" ? "Premium Member" : membership === "institution" ? "Institution" : "Free Member";
 
   const displayName = useMemo(() => {
-    const n = String((profile as any)?.full_name ?? "").trim();
+    const n = String(profileData?.full_name ?? "").trim();
     if (n) return n;
     if (user?.email) return String(user.email).split("@")[0];
     return "User";
-  }, [profile, user]);
+  }, [profileData, user]);
 
   useEffect(() => {
     if (user?.id && accountStatus.ready && userType) {
@@ -145,7 +152,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
 
     return common;
-  }, [userType]);
+  }, [profileReady, userType]);
 
   const Sidebar = (
     <aside className="h-full w-[280px] bg-gradient-to-b from-slate-900 to-slate-950 text-white border-r border-white/10">
@@ -192,7 +199,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             type="button"
             onClick={() => {
               // Use your global post product modal contract
-              (window as any).openPostItemModal?.();
+              const w = window as Window & { openPostItemModal?: () => void };
+              w.openPostItemModal?.();
               setMobileOpen(false);
             }}
             className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:opacity-90 text-white font-black py-3 rounded-xl"

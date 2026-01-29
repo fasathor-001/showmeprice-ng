@@ -34,9 +34,10 @@ export default function FeatureGate({ flagKey, fallback = null, children }: Prop
     return <>{fallback}</>;
   }
 
+  const profileData = profile as Record<string, unknown> | null;
   const ctx = {
     isAuthenticated: Boolean(user),
-    role: (profile as any)?.role ?? null,
+    role: profileData?.role ?? null,
     plan: isPremium ? "premium" : (tier === "institution" ? "institution" : "free"),
   } satisfies UserContext;
 
