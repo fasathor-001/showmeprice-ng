@@ -34,7 +34,7 @@ export default function DeliveryPage() {
       <div className="bg-white border rounded-2xl p-5">
         <div className="font-black text-slate-900">Coming soon</div>
         <div className="text-sm text-slate-600 mt-1">
-          We'll add delivery quotes, tracking, and delivery partner options here when enabled.
+          We&apos;ll add delivery quotes, tracking, and delivery partner options here when enabled.
         </div>
       </div>
     </div>

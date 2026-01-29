@@ -783,7 +783,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
                 <div className="mt-2 text-[10px] text-slate-400">Sending...</div>
               ) : null}
 
-              <div className="text-[11px] text-slate-500 mt-2">For safety, don't share phone numbers, bank details, or payment links in chat.</div>
+              <div className="text-[11px] text-slate-500 mt-2">For safety, don&apos;t share phone numbers, bank details, or payment links in chat.</div>
             </div>
           </div>
         </div>

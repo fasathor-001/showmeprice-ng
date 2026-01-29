@@ -107,8 +107,7 @@ export function useStates() {
         setStates([]);
         setError(e?.message || "Failed to load states");
       } finally {
-        if (!alive) return;
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
     return () => {

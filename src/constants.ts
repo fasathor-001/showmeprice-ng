@@ -56,7 +56,7 @@ export const ANTI_LEAK_PATTERNS = [
   /\b(?:\+?234|0)?[789][01]\d{8}\b/g,
   /\b\d{3}[-\s]?\d{3}[-\s]?\d{4}\b/g,
   // Emails
-  /\b[\w\.-]+@[\w\.-]+\.\w{2,4}\b/g,
+  /\b[\w.-]+@[\w.-]+\.\w{2,4}\b/g,
   // Social Handles (@username)
   /@\w+/g,
   // URLs / Links

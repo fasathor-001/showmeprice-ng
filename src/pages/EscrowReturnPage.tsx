@@ -139,7 +139,7 @@ export default function EscrowReturnPage() {
       <p className="text-sm text-slate-600">{status}</p>
       {!reference ? (
         <div className="mt-4 text-sm text-slate-600">
-          We couldn't find your payment reference. Please return to the marketplace or your dashboard.
+          We couldn&apos;t find your payment reference. Please return to the marketplace or your dashboard.
           <div className="mt-2 flex flex-wrap gap-2">
             <button
               type="button"

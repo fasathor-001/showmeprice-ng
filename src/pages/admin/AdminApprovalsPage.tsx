@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { ShieldAlert } from "lucide-react";
 import { useAdmin } from "../../hooks/useAdmin";
 import { useProfile } from "../../hooks/useProfile";
@@ -22,13 +22,6 @@ export default function AdminApprovalsPage() {
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (!isAdmin) return;
-    if (selectedIds.length === 0) return;
-    const pendingIds = new Set(pendingVerifications.map((v: any) => String(v.id)));
-    setSelectedIds((prev) => prev.filter((id) => pendingIds.has(id)));
-  }, [pendingVerifications, isAdmin, selectedIds.length]);
-
   const toggleSelectAll = () => {
     if (selectedIds.length === pendingVerifications.length) {
       setSelectedIds([]);
@@ -46,8 +39,10 @@ export default function AdminApprovalsPage() {
   };
 
   const handleBulkApprove = async () => {
-    if (confirm(`Are you sure you want to verify ${selectedIds.length} sellers?`)) {
-      await approveSellers(selectedIds);
+    const pendingIds = new Set(pendingVerifications.map((v: any) => String(v.id)));
+    const eligibleIds = selectedIds.filter((id) => pendingIds.has(id));
+    if (confirm(`Are you sure you want to verify ${eligibleIds.length} sellers?`)) {
+      await approveSellers(eligibleIds);
       setSelectedIds([]);
     }
   };

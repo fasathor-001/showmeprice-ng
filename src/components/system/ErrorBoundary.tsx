@@ -1,6 +1,6 @@
 import * as React from "react";
 
-type Props = React.PropsWithChildren<{}>;
+type Props = React.PropsWithChildren<object>;
 
 type State = {
   hasError: boolean;

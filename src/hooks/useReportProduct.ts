@@ -28,7 +28,7 @@ export function useReportProduct(productId?: string | null) {
 
       if (error) throw error;
     },
-    [productId, user?.id]
+    [productId, user]
   );
 
   return { submitReport, loading };

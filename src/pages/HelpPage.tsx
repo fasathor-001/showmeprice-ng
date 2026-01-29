@@ -60,7 +60,7 @@ export default function HelpPage() {
           <ul className="mt-4 space-y-2 text-sm text-slate-600">
             <li>Post clear photos and a real price.</li>
             <li>Reply fast to chats to close sales.</li>
-            <li>Buyers can pay with Escrow - sellers don't need Premium for that.</li>
+            <li>Buyers can pay with Escrow - sellers don&apos;t need Premium for that.</li>
             <li>Upgrade your seller plan for more listings and visibility.</li>
           </ul>
           <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-2">

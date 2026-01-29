@@ -83,7 +83,7 @@ export function useProductComments(productId?: string | null) {
       }
       return row;
     },
-    [productId, user?.id]
+    [productId, user]
   );
 
   return { comments, loading, addComment, reload: loadComments };

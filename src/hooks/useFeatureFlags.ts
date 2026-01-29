@@ -99,6 +99,7 @@ export function useFeatureFlags() {
 
   useEffect(() => {
     mountedRef.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh();
     return () => {
       mountedRef.current = false;

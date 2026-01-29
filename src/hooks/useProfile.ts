@@ -255,8 +255,9 @@ export function useProfile() {
         error: e?.message ?? "Failed to load profile",
       });
     } finally {
-      if (reqId !== requestIdRef.current) return;
-      setState((s) => (s.loading ? { ...s, loading: false } : s));
+      if (reqId === requestIdRef.current) {
+        setState((s) => (s.loading ? { ...s, loading: false } : s));
+      }
     }
   }, []);
 

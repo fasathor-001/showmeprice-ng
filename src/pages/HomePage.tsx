@@ -779,7 +779,7 @@ export default function HomePage() {
                 </h1>
 
                 <p className="text-slate-600 text-base md:text-lg max-w-2xl mx-auto">
-                  No more "DM for price". See actual prices, contact sellers directly, and shop with confidence.
+                  No more &quot;DM for price&quot;. See actual prices, contact sellers directly, and shop with confidence.
                 </p>
               </div>
             </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useHubs, useSubcategories } from "../../hooks/useCategories";
 
@@ -22,15 +22,9 @@ export default function ProductCategorySelector({
     selectedHubId || null
   ) as any;
 
-  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string>("");
-
-  // Optional preset (best-effort)
-  useEffect(() => {
-    if (initialSubcategoryId && !selectedSubcategoryId) {
-      setSelectedSubcategoryId(String(initialSubcategoryId));
-      // We cannot infer hubId from subcategory without an index; user can re-pick hub if needed.
-    }
-  }, [initialSubcategoryId, selectedSubcategoryId]);
+  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string>(() =>
+    initialSubcategoryId ? String(initialSubcategoryId) : ""
+  );
 
   const hubOptions = useMemo(() => {
     return (hubs || []).map((h: any) => ({

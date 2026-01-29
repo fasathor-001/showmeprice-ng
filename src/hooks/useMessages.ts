@@ -196,7 +196,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
 
       // Fetch profile names
       const partnerIds = Array.from(new Set(convsRaw.map((c) => c.partnerId)));
-      let nameById: Record<string, string> = {};
+      const nameById: Record<string, string> = {};
       if (partnerIds.length) {
         // Prefer business_name for sellers when available
         try {

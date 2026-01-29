@@ -213,21 +213,20 @@ export default function PostProductForm({ onClose }: Props) {
     onClose?.();
   };
 
-  const ToastOverlay = () =>
-    toast ? (
-      <div className="fixed top-4 right-4 z-[9999] max-w-[92vw] sm:max-w-md">
-        <div
-          className={[
-            "rounded-2xl border px-4 py-3 shadow-xl backdrop-blur",
-            toast.tone === "success"
-              ? "bg-emerald-600 text-white border-emerald-500/40"
-              : "bg-slate-900 text-white border-slate-700/40",
-          ].join(" ")}
-        >
-          <div className="text-sm font-semibold">{toast.message}</div>
-        </div>
+  const toastOverlay = toast ? (
+    <div className="fixed top-4 right-4 z-[9999] max-w-[92vw] sm:max-w-md">
+      <div
+        className={[
+          "rounded-2xl border px-4 py-3 shadow-xl backdrop-blur",
+          toast.tone === "success"
+            ? "bg-emerald-600 text-white border-emerald-500/40"
+            : "bg-slate-900 text-white border-slate-700/40",
+        ].join(" ")}
+      >
+        <div className="text-sm font-semibold">{toast.message}</div>
       </div>
-    ) : null;
+    </div>
+  ) : null;
 
   const addFiles = (incoming: FileList | File[]) => {
     setFormError(null);
@@ -513,7 +512,7 @@ export default function PostProductForm({ onClose }: Props) {
   if (businessLoading) {
     return (
       <div className="bg-gradient-to-b from-slate-50 to-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
-        <ToastOverlay />
+        {toastOverlay}
         <div className="p-5 border-b border-slate-100">
           <div className="h-6 w-44 bg-slate-200 rounded animate-pulse" />
           <div className="h-4 w-72 bg-slate-200 rounded mt-3 animate-pulse" />
@@ -530,7 +529,7 @@ export default function PostProductForm({ onClose }: Props) {
   if (!business) {
     return (
       <div className="bg-gradient-to-b from-slate-50 to-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
-        <ToastOverlay />
+        {toastOverlay}
         <div className="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
           <div>
             <div className="text-sm font-black text-slate-500">Seller</div>
@@ -562,7 +561,7 @@ export default function PostProductForm({ onClose }: Props) {
   if (isDealPost && (!dealsEnabled || !canPostDeal)) {
     return (
       <div className="bg-gradient-to-b from-slate-50 to-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
-        <ToastOverlay />
+        {toastOverlay}
         <div className="p-5 border-b border-slate-100 flex items-start justify-between gap-3">
           <div>
             <div className="text-sm font-black text-slate-500">Deals</div>
@@ -604,7 +603,7 @@ export default function PostProductForm({ onClose }: Props) {
 
   return (
     <div className="bg-gradient-to-b from-slate-50 to-white rounded-3xl border border-slate-200 shadow-xl overflow-hidden">
-      <ToastOverlay />
+      {toastOverlay}
 
       <div className="sticky top-0 z-10 bg-gradient-to-b from-slate-50 to-white border-b border-slate-100">
         <div className="p-5 flex items-start justify-between gap-3">

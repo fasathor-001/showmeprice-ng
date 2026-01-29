@@ -329,6 +329,7 @@ export default function AccountShell({
   }, [user, isAdmin]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMobileOpen(false);
   }, [path]);
 
@@ -409,7 +410,7 @@ export default function AccountShell({
   const errorCard = (
     <div className="min-h-[60vh] flex items-center justify-center px-4">
       <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center max-w-sm w-full">
-        <div className="text-lg font-black text-slate-900">We couldn't load your account</div>
+        <div className="text-lg font-black text-slate-900">We couldn&apos;t load your account</div>
         <div className="text-sm text-slate-600 mt-2">Please sign in again.</div>
         <div className="mt-4">
           <button
