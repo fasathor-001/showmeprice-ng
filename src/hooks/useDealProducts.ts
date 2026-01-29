@@ -26,8 +26,11 @@ type UseDealProductsOptions = {
 export function useDealProducts(options?: UseDealProductsOptions) {
   const enabled = !!options?.enabled;
   const seasonLabel = (options?.seasonLabel || "").trim();
-  const seasonKeys = Array.isArray(options?.seasonKeys) ? options!.seasonKeys!.filter(Boolean) : [];
-  const pageSize = Number.isFinite(options?.pageSize as any) ? (options!.pageSize as number) : 24;
+  const rawSeasonKeys = options?.seasonKeys;
+  const seasonKeys = useMemo(() => {
+    return Array.isArray(rawSeasonKeys) ? rawSeasonKeys.filter(Boolean) : [];
+  }, [rawSeasonKeys]);
+  const pageSize = Number.isFinite(options?.pageSize) ? Number(options?.pageSize) : 24;
 
   const seasonKeysStable = useMemo(() => {
     // stable string for dependency tracking
@@ -98,13 +101,14 @@ export function useDealProducts(options?: UseDealProductsOptions) {
         const rows = (data || []) as DealProduct[];
         setDeals((prev) => (mode === "replace" ? rows : [...prev, ...rows]));
         setHasMore(rows.length === pageSize);
-      } catch (e: any) {
-        setError(e?.message ?? "Failed to load deals");
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : "Failed to load deals";
+        setError(message);
       } finally {
         setFetching(false);
       }
     },
-    [enabled, pageSize, seasonLabel, seasonKeysStable] // use seasonKeysStable not array ref
+    [enabled, pageSize, seasonLabel, seasonKeys] // use memoized seasonKeys
   );
 
   // auto reset and fetch when enabled/season changes

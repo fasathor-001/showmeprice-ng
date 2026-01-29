@@ -1,7 +1,7 @@
 // src/pages/InboxPage.tsx
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Search, RefreshCw, SendHorizontal, Image as ImageIcon } from "lucide-react";
-import useMessages from "../hooks/useMessages";
+import useMessages, { type ChatMessage } from "../hooks/useMessages";
 import { useAuth } from "../hooks/useAuth";
 import { useFF } from "../hooks/useFF";
 import { useProfile } from "../hooks/useProfile";
@@ -28,15 +28,15 @@ type ProductPreview = {
   city: string | null;
 };
 
-function safeStr(v: any) {
+function safeStr(v: unknown) {
   return typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim();
 }
 
-function safeLower(v: any) {
+function safeLower(v: unknown) {
   return safeStr(v).toLowerCase();
 }
 
-function formatMoney(v: any) {
+function formatMoney(v: unknown) {
   const n = Number(v ?? 0);
   if (!Number.isFinite(n)) return "";
   return `₦${n.toLocaleString("en-NG")}`;
@@ -63,7 +63,7 @@ function shortId(id: string) {
   return s ? s.slice(0, 6) : "";
 }
 
-function cleanPartnerCandidate(v: any) {
+function cleanPartnerCandidate(v: unknown) {
   const s = safeStr(v);
   if (!s) return "";
   const lower = safeLower(s);
@@ -76,18 +76,19 @@ function publicProductImageUrl(pathOrUrl: string) {
   if (!s) return "";
   if (/^https?:\/\//i.test(s)) return s;
 
-  const base = safeStr((import.meta as any)?.env?.VITE_SUPABASE_URL);
+  const env = (import.meta as { env?: Record<string, string | undefined> }).env;
+  const base = safeStr(env?.VITE_SUPABASE_URL);
   if (!base) return "";
   return `${base}/storage/v1/object/public/products/${s}`;
 }
 
-function pickImage(images: any): string | null {
+function pickImage(images: unknown): string | null {
   const arr = Array.isArray(images) ? images : [];
   const first = safeStr(arr[0]);
   return first || null;
 }
 
-function normalizeInboxInit(v: any): InboxInit | null {
+function normalizeInboxInit(v: Record<string, unknown> | null | undefined): InboxInit | null {
   if (!v) return null;
   const partnerId = safeStr(v.partnerId);
   if (!partnerId) return null;
@@ -136,11 +137,14 @@ function getBlockedMessageReason(text: string): string | null {
 
 export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) {
   const { user } = useAuth();
-  const { profile, business } = useProfile() as any;
-  const FF = useFF();
+  const { profile, business } = useProfile() as {
+    profile?: Record<string, unknown>;
+    business?: Record<string, unknown>;
+  };
+  const FF = useFF() as Record<string, unknown>;
 
-  const messagingEnabled = !!(FF as any)?.messaging;
-  const chatFilteringEnabled = !!(FF as any)?.chatFiltering;
+  const messagingEnabled = !!FF?.messaging;
+  const chatFilteringEnabled = !!FF?.chatFiltering;
 
   const {
     loading,
@@ -155,6 +159,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
     sendMessage,
     setActiveConversationId,
   } = useMessages({ enabled: messagingEnabled });
+  void _loadingThreadId;
 
   const [q, setQ] = useState("");
   const [draft, setDraft] = useState("");
@@ -165,6 +170,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
   const [compose, setCompose] = useState<InboxInit | null>(null);
   const [hasBusiness, _setHasBusiness] = useState<boolean | null>(null);
   const convIdByKeyRef = useRef<Record<string, string>>({});
+  void _setHasBusiness;
 
   const [nameById, setNameById] = useState<Record<string, string>>({});
   const [productPreview, setProductPreview] = useState<ProductPreview | null>(null);
@@ -173,9 +179,9 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
   const pendingScrollTopRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef(0);
 
-  const chatsDisabled = !!(profile as any)?.chats_disabled;
+  const chatsDisabled = !!profile?.chats_disabled;
 
-  const isSeller = hasBusiness === true || !!(business as any)?.id;
+  const isSeller = hasBusiness === true || !!business?.id;
   const backTo = isSeller ? "/my-shop" : "/dashboard";
   const backLabel = isSeller ? "Back to My Shop" : "Back to Dashboard";
 
@@ -188,8 +194,8 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
   const [currentPartnerId, setCurrentPartnerId] = useState<string | null>(null);
 
   const currentProductId =
-    (active as any)?.productId !== undefined && (active as any)?.productId !== null
-      ? (active as any).productId
+    active?.productId !== undefined && active?.productId !== null
+      ? active.productId
       : compose?.productId
       ? compose.productId
       : null;
@@ -207,11 +213,11 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
     if (!qq) return conversations;
-    return (conversations || []).filter((c: any) => {
+    return (conversations || []).filter((c) => {
       const pid = safeStr(c.partnerId);
       const name = (nameById[pid] || cleanPartnerCandidate(c.partnerName) || "").toLowerCase();
       const last = (c.lastMessage || "").toLowerCase();
-      const title = safeStr((c as any)?.productTitle).toLowerCase();
+      const title = safeStr(c?.productTitle).toLowerCase();
       return name.includes(qq) || last.includes(qq) || title.includes(qq);
     });
   }, [q, conversations, nameById]);
@@ -219,7 +225,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
   useEffect(() => {
     const ids = new Set<string>();
     for (const c of conversations || []) {
-      const pid = safeStr((c as any)?.partnerId);
+      const pid = safeStr(c?.partnerId);
       if (pid) ids.add(pid);
     }
     const cp = safeStr(compose?.partnerId);
@@ -239,12 +245,15 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
           .select("id,display_name,full_name,first_name,last_name")
           .in("id", uniq);
         for (const row of pubRows || []) {
-          const id = safeStr((row as any).id);
+          const id = safeStr((row as Record<string, unknown>).id);
           if (!id) continue;
           const displayName =
-            safeStr((row as any).display_name) ||
-            safeStr((row as any).full_name) ||
-            [safeStr((row as any).first_name), safeStr((row as any).last_name)].filter(Boolean).join(" ").trim();
+            safeStr((row as Record<string, unknown>).display_name) ||
+            safeStr((row as Record<string, unknown>).full_name) ||
+            [safeStr((row as Record<string, unknown>).first_name), safeStr((row as Record<string, unknown>).last_name)]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
           profMap[id] = { displayName };
         }
         const { data: bizRows } = await supabase
@@ -252,9 +261,9 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
           .select("user_id,business_name")
           .in("user_id", uniq);
         for (const row of bizRows || []) {
-          const id = safeStr((row as any).user_id);
+          const id = safeStr((row as Record<string, unknown>).user_id);
           if (!id) continue;
-          const businessName = safeStr((row as any).business_name);
+          const businessName = safeStr((row as Record<string, unknown>).business_name);
           if (businessName) bizMap[id] = { businessName };
         }
       } catch {
@@ -298,7 +307,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
           .eq("id", pid)
           .limit(1);
 
-        const row: any = (data as any)?.[0] ?? null;
+        const row = (data as Array<Record<string, unknown>> | null)?.[0] ?? null;
         if (cancelled) return;
 
         if (!row) {
@@ -310,7 +319,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
           id: safeStr(row.id),
           title: row.title ?? null,
           price: row.price ?? null,
-          images: (row.images as any) ?? null,
+          images: (row.images as string[] | null | undefined) ?? null,
           city: row.city ?? null,
         });
       } catch {
@@ -323,9 +332,9 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
     };
   }, [currentProductId]);
 
-  const threadMessages = activeConversationId
-    ? messagesByConversationId[activeConversationId] ?? []
-    : [];
+  const threadMessages = useMemo(() => {
+    return activeConversationId ? messagesByConversationId[activeConversationId] ?? [] : [];
+  }, [activeConversationId, messagesByConversationId]);
 
   useEffect(() => {
     if (!activeConversationId) return;
@@ -342,7 +351,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
     });
   }, [conversations, activeConversationId]);
 
-  const ensureConversationId = async (params: {
+  const ensureConversationId = useCallback(async (params: {
     currentUserId: string;
     otherUserId: string;
     productId?: string | null;
@@ -384,9 +393,10 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
 
     convIdByKeyRef.current[key] = String(created.id);
     return String(created.id);
-  };
+  }, [isSeller]);
 
   const onPickConversation = async (conversationId: string, partnerId: string, _productId: string | null) => {
+    void _productId;
     setCompose(null);
     setCurrentPartnerId(partnerId);
     await loadThread(conversationId);
@@ -440,8 +450,9 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
         body: draft,
       });
       setDraft("");
-    } catch (err: any) {
-      emitToast("error", err?.message ?? "Failed to send message.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to send message.";
+      emitToast("error", message);
     } finally {
       setEnsuringConversation(false);
       setSending(false);
@@ -479,8 +490,9 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
         });
         setActiveConversationId(conversationId);
         await loadThread(conversationId);
-      } catch (err: any) {
-        emitToast("error", err?.message ?? "Could not open conversation.");
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Could not open conversation.";
+        emitToast("error", message);
       } finally {
         setEnsuringConversation(false);
       }
@@ -491,7 +503,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
     } catch {
       // intentionally empty
     }
-  }, [user?.id, messagingEnabled, initialChat, ensureConversationId, loadThread]);
+  }, [user, messagingEnabled, initialChat, ensureConversationId, loadThread, setActiveConversationId]);
 
   if (!user?.id) {
     return (
@@ -587,21 +599,21 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
                 </div>
               ) : (
                 <div className="divide-y">
-                  {filtered.map((c: any) => {
+                  {filtered.map((c) => {
                     const isActive =
                       !!activeConversationId &&
                       String(c.conversationId ?? "") === String(activeConversationId);
                     const pid = safeStr(c.partnerId);
-                    const candidate = cleanPartnerCandidate((c as any).partnerName);
+                    const candidate = cleanPartnerCandidate(c.partnerName);
                     const name = nameById[pid] || candidate || fallbackPartnerLabel(pid);
-                    const productTitle = safeStr((c as any)?.productTitle) || "Product";
-                    const productPrice = formatMoney((c as any)?.productPrice);
-                    const imgPath = pickImage((c as any)?.productImages);
+                    const productTitle = safeStr(c?.productTitle) || "Product";
+                    const productPrice = formatMoney(c?.productPrice);
+                    const imgPath = pickImage(c?.productImages);
                     const imgUrl = imgPath ? publicProductImageUrl(imgPath) : "";
                     const timeLabel = formatThreadTime(c.lastAt);
                     return (
                       <button
-                        key={String(c.conversationId ?? (c as any).id ?? c.key)}
+                        key={String(c.conversationId ?? c.key)}
                         onClick={() => {
                           const convId = String(c.conversationId || "");
                           if (convId) {
@@ -622,8 +634,9 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
                               setActiveConversationId(ensured);
                               setCurrentPartnerId(c.partnerId);
                               onPickConversation(ensured, c.partnerId, c.productId);
-                            } catch (err: any) {
-                              emitToast("error", err?.message ?? "Could not open conversation.");
+                            } catch (err: unknown) {
+                              const message = err instanceof Error ? err.message : "Could not open conversation.";
+                              emitToast("error", message);
                             }
                           })();
                         }}
@@ -728,7 +741,7 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
                     <div className="text-sm text-slate-600">No messages yet. Send the first message.</div>
                   ) : null}
 
-                  {threadMessages.map((m: any) => {
+                  {threadMessages.map((m: ChatMessage) => {
                     const mine = m.sender_id === user.id;
                     return (
                       <div key={m.id} className={mine ? "flex justify-end" : "flex justify-start"}>

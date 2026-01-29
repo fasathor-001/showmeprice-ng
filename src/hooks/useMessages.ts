@@ -31,7 +31,7 @@ export type Conversation = {
   unreadCount: number;
 };
 
-function cleanDisplayName(p: any) {
+function cleanDisplayName(p: Record<string, unknown> | null | undefined) {
   const raw =
     String(p?.display_name || "").trim() ||
     String(p?.full_name || "").trim() ||
@@ -41,7 +41,7 @@ function cleanDisplayName(p: any) {
   return raw;
 }
 
-function normalizeContent(v: any) {
+function normalizeContent(v: unknown) {
   if (typeof v === "string") return v;
   if (v == null) return "";
   return String(v);
@@ -51,7 +51,7 @@ function convKey(partnerId: string, productId: string | null) {
   return `${partnerId}::${productId ?? ""}`;
 }
 
-function nameFromProfile(p: any) {
+function nameFromProfile(p: Record<string, unknown> | null | undefined) {
   return (
     String(p?.display_name || "").trim() ||
     String(p?.full_name || "").trim() ||
@@ -156,7 +156,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
 
       if (e) throw e;
 
-      const rows = (data ?? []).map((m: any) => ({
+      const rows = (data ?? []).map((m: Record<string, unknown>) => ({
         ...m,
         content: normalizeContent(m?.content),
       })) as ChatMessage[];
@@ -166,7 +166,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
 
       for (const m of rows) {
         const partnerId = m.sender_id === user.id ? m.receiver_id : m.sender_id;
-        const convId = (m as any)?.conversation_id ? String((m as any).conversation_id) : "";
+        const convId = m.conversation_id ? String(m.conversation_id) : "";
         const key = convId ? `conv:${convId}` : convKey(partnerId, m.product_id ?? null);
         const partnerProfile = m.sender_id === user.id ? m.receiver : m.sender;
 
@@ -176,9 +176,9 @@ export function useMessages(opts?: { enabled?: boolean }) {
             conversationId: convId || null,
             partnerId,
             productId: m.product_id ?? null,
-            productTitle: (m as any)?.product?.title ?? null,
-            productPrice: (m as any)?.product?.price ?? null,
-            productImages: (m as any)?.product?.images ?? null,
+            productTitle: m.product?.title ?? null,
+            productPrice: m.product?.price ?? null,
+            productImages: m.product?.images ?? null,
             lastMessage: m.content,
             lastAt: m.created_at,
             unreadCount: 0,
@@ -206,8 +206,8 @@ export function useMessages(opts?: { enabled?: boolean }) {
             .in("user_id", partnerIds);
 
           for (const b of bizRows ?? []) {
-            const uid = String((b as any)?.user_id ?? "");
-            const bn = String((b as any)?.business_name ?? "").trim();
+            const uid = String((b as Record<string, unknown>)?.user_id ?? "");
+            const bn = String((b as Record<string, unknown>)?.business_name ?? "").trim();
             if (uid && bn) nameById[uid] = bn;
           }
         } catch {
@@ -220,7 +220,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
           .in("id", partnerIds);
 
         for (const p of profs ?? []) {
-          const id = String((p as any).id ?? "").trim();
+          const id = String((p as Record<string, unknown>).id ?? "").trim();
           const n = cleanDisplayName(p);
           if (id && n && !nameById[id]) nameById[id] = n;
         }
@@ -244,12 +244,13 @@ export function useMessages(opts?: { enabled?: boolean }) {
       if (activeConversationId && !convs.some((c) => c.conversationId === activeConversationId)) {
         setActiveConversationId(null);
       }
-    } catch (err: any) {
-      setError(err?.message ?? "Failed to load messages");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to load messages";
+      setError(message);
     } finally {
       setLoading(false);
     }
-  }, [user?.id, enabled, activeConversationId]);
+  }, [user, enabled, activeConversationId]);
 
   const loadThread = useCallback(
     async (conversationId: string) => {
@@ -273,7 +274,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
         const { data, error: e } = await q;
         if (e) throw e;
 
-        const rows = (data ?? []).map((m: any) => ({
+        const rows = (data ?? []).map((m: Record<string, unknown>) => ({
           ...m,
           content: normalizeContent(m?.content),
         })) as ChatMessage[];
@@ -292,13 +293,14 @@ export function useMessages(opts?: { enabled?: boolean }) {
           await uq;
           updateConversationMeta({ conversationId, forceUnreadZero: true });
         }
-      } catch (err: any) {
-        setError(err?.message ?? "Failed to load chat");
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to load chat";
+        setError(message);
       } finally {
         setLoadingThreadId(null);
       }
     },
-    [user?.id, updateConversationMeta]
+    [user, updateConversationMeta]
   );
 
   const sendMessage = useCallback(
@@ -325,7 +327,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
         if (inserted) {
           const normalized = {
             ...inserted,
-            content: normalizeContent((inserted as any)?.content ?? (inserted as any)?.body),
+            content: normalizeContent((inserted as Record<string, unknown>)?.content ?? (inserted as Record<string, unknown>)?.body),
           } as ChatMessage;
           const convId = String(args.conversationId);
           setMessagesByConversationId((prev) => {
@@ -345,7 +347,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
         setSending(false);
       }
     },
-    [user?.id, loadThread, updateConversationMeta]
+    [user, loadThread, updateConversationMeta]
   );
 
   // Initial + realtime updates
@@ -359,8 +361,8 @@ export function useMessages(opts?: { enabled?: boolean }) {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "messages" },
-        (payload: any) => {
-          const mRaw = payload?.new as any;
+        (payload: { new?: Record<string, unknown> }) => {
+          const mRaw = payload?.new;
           const m = mRaw
             ? ({ ...mRaw, content: normalizeContent(mRaw.content ?? mRaw.body) } as ChatMessage)
             : undefined;
@@ -399,7 +401,7 @@ export function useMessages(opts?: { enabled?: boolean }) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, enabled, activeConversationId, updateConversationMeta]);
+  }, [user, enabled, activeConversationId, refreshConversations, updateConversationMeta]);
 
   return {
     loading,
