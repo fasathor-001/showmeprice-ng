@@ -31,3 +31,7 @@ supabase/_hold_migrations/
 
 .wip_codex_backup/
 
+# Environment variables (DO NOT COMMIT SECRETS)
+.env
+.env.*
+!.env.example
