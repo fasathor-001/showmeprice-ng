@@ -10,7 +10,45 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-*.local
+
+# Environment variables (DO NOT COMMIT SECRETS)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Env backups
+.env.bak
+*.env.bak
+.env.*.bak
+
+# Local-only env overrides
+.env.local
+.env.*.local
+
+# Local test/request payload files
+*.json
+!package.json
+!tsconfig.json
+!*.schema.json
+!*.lock.json
+!lint-target.json
+
+# Optional: keep any docs JSON examples if they exist
+!docs/**/*.json
+
+# Local request/debug payloads
+body.json
+buyer.json
+seller.json
+login.json
+paystack_test.json
+*.payload.json
+*.request.json
+
+# Supabase local artifacts (do not commit)
+supabase/.temp/
+supabase/.branches/
 
 # Editor directories and files
 .vscode/*
@@ -35,3 +73,7 @@ supabase/_hold_migrations/
 .env
 .env.*
 !.env.example
+
+# Backups
+*.bak
+
