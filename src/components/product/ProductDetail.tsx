@@ -458,7 +458,9 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   };
 
   const handleReveal = async () => {
-    const targetId = safeText((product as any)?.business_id);
+    // Use the pre-computed businessId which includes businesses.id as a fallback.
+    // Directly reading product.business_id missed the businesses(id) join path.
+    const targetId = safeText(businessId);
     if (!targetId) return;
     await reveal(String(targetId));
   };
