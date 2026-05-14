@@ -104,10 +104,18 @@ serve(async (req) => {
         .from("escrow_orders")
         .update({ status: "funded", paid_at: nowIso, updated_at: nowIso })
         .eq("paystack_reference", reference)
-        .in("status", ["initialized", "pending"])
+        .in("status", ["initialized", "pending", "pending_payment"])
         .select("id")
         .maybeSingle();
       updated = !!updatedRow?.id;
+
+      // FIX 5: sync escrow_transactions so the React client sees the same status.
+      // Uses payment_reference which mirrors paystack_reference written by paystack-init-escrow.
+      await supabaseAdmin
+        .from("escrow_transactions")
+        .update({ status: "funded", updated_at: nowIso })
+        .eq("payment_reference", reference)
+        .in("status", ["pending_payment", "initialized", "pending"]);
 
       const { error: eventErr } = await supabaseAdmin.from("escrow_events").insert({
         provider: "paystack",

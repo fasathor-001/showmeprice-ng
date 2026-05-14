@@ -90,7 +90,7 @@ serve(async (req) => {
   const productId = normalizeId(payload?.product_id);
   const sellerId = normalizeId(payload?.seller_id);
   const amountKobo = Number(payload?.amount_kobo ?? 0);
-  const currency = String(payload?.currency ?? "NGN").trim() || "NGN";
+  const currency = "NGN"; // hardcoded — never trust client-supplied currency
 
   if (!productId || !sellerId) {
     return jsonResponse(400, { error: "Missing product or seller." });
@@ -201,6 +201,62 @@ serve(async (req) => {
     return jsonResponse(400, { error: "Amount mismatch." });
   }
 
+  // Duplicate-order guard: if a pending_payment row already exists for this
+  // (buyer, product) pair, return it rather than creating a second one.
+  // Prevents double-tap / browser retry from creating ghost orders.
+  const { data: existingRows } = await supabaseAdmin
+    .from("escrow_transactions")
+    .select("id, payment_reference")
+    .eq("buyer_id", buyerId)
+    .eq("product_id", productId)
+    .eq("status", "pending_payment")
+    .order("created_at", { ascending: false })
+    .limit(1);
+
+  const existingOrder = existingRows?.[0] ?? null;
+  if (existingOrder?.id && existingOrder?.payment_reference) {
+    // Re-initialise Paystack with the existing reference so the buyer gets a fresh
+    // payment URL without creating a new DB record.
+    const existingRef = String(existingOrder.payment_reference);
+    const callbackUrlExisting = `${appUrl.replace(/\/$/, "")}/escrow/return?order=${existingOrder.id}`;
+    const reinitBody = {
+      amount: expectedKobo,
+      email: buyerEmail,
+      reference: existingRef,
+      callback_url: callbackUrlExisting,
+      metadata: {
+        order_id: existingOrder.id,
+        product_id: productId,
+        buyer_id: buyerId,
+        seller_id: sellerId,
+        amount_kobo: expectedKobo,
+      },
+    };
+    try {
+      const reinitRes = await fetch("https://api.paystack.co/transaction/initialize", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${paystackSecretKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(reinitBody),
+      });
+      const reinitJson = await reinitRes.json();
+      const reinitUrl = String(reinitJson?.data?.authorization_url ?? "").trim();
+      if (reinitRes.ok && reinitJson?.status && reinitUrl) {
+        return jsonResponse(200, {
+          ok: true,
+          order_id: existingOrder.id,
+          authorization_url: reinitUrl,
+        });
+      }
+      // If Paystack rejects the existing reference (already paid / expired),
+      // fall through to create a fresh order below.
+    } catch {
+      // Fall through to fresh order creation.
+    }
+  }
+
   const reference = `escrow_${crypto.randomUUID().replace(/-/g, "")}`;
   const { data: orderRows, error: orderErr } = await supabaseAdmin
     .from("escrow_transactions")
@@ -208,7 +264,7 @@ serve(async (req) => {
       buyer_id: buyerId,
       seller_id: sellerId,
       product_id: productId,
-      currency,
+      currency: "NGN",
       amount_product: amountProduct,
       amount_fee: amountFee,
       amount_total: amountTotal,
@@ -241,8 +297,6 @@ serve(async (req) => {
   };
 
   let authorizationUrl = "";
-  let _accessCode = "";
-  void _accessCode;
 
   try {
     const res = await fetch("https://api.paystack.co/transaction/initialize", {
@@ -256,15 +310,18 @@ serve(async (req) => {
 
     const json = await res.json();
     if (!res.ok || !json?.status) {
+      // Clean up orphaned escrow record before returning error
+      await supabaseAdmin.from("escrow_transactions").delete().eq("id", orderId);
       return jsonResponse(500, { error: "Paystack initialization failed." });
     }
 
     authorizationUrl = String(json?.data?.authorization_url ?? "").trim();
-    _accessCode = String(json?.data?.access_code ?? "").trim();
     if (!authorizationUrl) {
+      await supabaseAdmin.from("escrow_transactions").delete().eq("id", orderId);
       return jsonResponse(500, { error: "Paystack authorization missing." });
     }
   } catch (e: any) {
+    await supabaseAdmin.from("escrow_transactions").delete().eq("id", orderId);
     return jsonResponse(500, { error: "Paystack initialization failed.", details: e?.message });
   }
 

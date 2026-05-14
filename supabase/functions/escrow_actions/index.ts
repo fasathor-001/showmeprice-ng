@@ -19,6 +19,107 @@ type ActionPayload = {
   payload?: Record<string, unknown>;
 };
 
+async function sendNotification(
+  supabaseUrl: string,
+  internalSecret: string,
+  payload: {
+    event: string;
+    to_email: string;
+    to_name?: string;
+    data?: Record<string, string>;
+  }
+) {
+  if (!internalSecret) return;
+  try {
+    await fetch(`${supabaseUrl}/functions/v1/notify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-secret": internalSecret,
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    console.error("[escrow_actions] notify failed", e);
+  }
+}
+
+async function paystackRefund(paystackSecretKey: string, reference: string, amountKobo: number) {
+  const res = await fetch("https://api.paystack.co/refund", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${paystackSecretKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ transaction: reference, amount: amountKobo }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.status) {
+    throw new Error(`Paystack refund failed: ${json?.message ?? res.status}`);
+  }
+  return json;
+}
+
+async function paystackTransferToSeller(
+  paystackSecretKey: string,
+  amountKobo: number,
+  recipientCode: string,
+  reference: string,
+  reason: string
+) {
+  const res = await fetch("https://api.paystack.co/transfer", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${paystackSecretKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      source: "balance",
+      amount: amountKobo,
+      recipient: recipientCode,
+      reference,
+      reason,
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.status) {
+    throw new Error(`Paystack transfer failed: ${json?.message ?? res.status}`);
+  }
+  return json;
+}
+
+async function getOrCreatePaystackRecipient(
+  paystackSecretKey: string,
+  accountNumber: string,
+  bankCode: string,
+  accountName: string
+): Promise<string> {
+  const res = await fetch("https://api.paystack.co/transferrecipient", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${paystackSecretKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      type: "nuban",
+      name: accountName,
+      account_number: accountNumber,
+      bank_code: bankCode,
+      currency: "NGN",
+    }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || !json?.status) {
+    throw new Error(`Failed to create transfer recipient: ${json?.message ?? res.status}`);
+  }
+  // FIX 4: never return an empty string for a financial identifier
+  const code = String(json?.data?.recipient_code ?? "").trim();
+  if (!code) {
+    throw new Error("Paystack returned empty recipient_code — cannot proceed with transfer");
+  }
+  return code;
+}
+
 function normalizeId(input: unknown) {
   return String(input ?? "").trim();
 }
@@ -38,6 +139,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
     const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+    const paystackSecretKey = Deno.env.get("PAYSTACK_SECRET_KEY") ?? "";
+    const internalSecret = Deno.env.get("INTERNAL_FUNCTION_SECRET") ?? "";
     if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
       return jsonResponse(500, { ok: false, error: "Server misconfigured." });
     }
@@ -323,6 +426,18 @@ serve(async (req) => {
         payload: { confirmed_at: now },
       });
 
+      // Notify seller that delivery was confirmed
+      const { data: sellerAuth } = await supabaseAdmin.auth.admin.getUserById(String(order.seller_id ?? ""));
+      if (sellerAuth?.user?.email) {
+        const { data: sellerProf } = await supabaseAdmin.from("profiles").select("display_name,full_name").eq("id", String(order.seller_id ?? "")).maybeSingle();
+        await sendNotification(supabaseUrl, internalSecret, {
+          event: "escrow_delivered_confirmed",
+          to_email: sellerAuth.user.email,
+          to_name: String((sellerProf as any)?.display_name ?? (sellerProf as any)?.full_name ?? ""),
+          data: { order_id: escrowOrderId },
+        });
+      }
+
       console.log("[escrow_actions] buyer_confirm_delivery ok", { userId, escrowOrderId });
       return jsonResponse(200, {
         ok: true,
@@ -402,6 +517,21 @@ serve(async (req) => {
         payload: { reason, opened_at: now },
       });
 
+      // Notify both parties that a dispute was opened
+      for (const uid of [String(order.buyer_id ?? ""), String(order.seller_id ?? "")]) {
+        if (!uid) continue;
+        const { data: u } = await supabaseAdmin.auth.admin.getUserById(uid);
+        if (u?.user?.email) {
+          const { data: p } = await supabaseAdmin.from("profiles").select("display_name,full_name").eq("id", uid).maybeSingle();
+          await sendNotification(supabaseUrl, internalSecret, {
+            event: "escrow_dispute_opened",
+            to_email: u.user.email,
+            to_name: String((p as any)?.display_name ?? (p as any)?.full_name ?? ""),
+            data: { order_id: escrowOrderId, reason },
+          });
+        }
+      }
+
       console.log("[escrow_actions] buyer_open_dispute ok", { userId, escrowOrderId });
       return jsonResponse(200, {
         ok: true,
@@ -427,7 +557,7 @@ serve(async (req) => {
 
         const { data: orderRow, error: orderLoadErr } = await supabaseAdmin
           .from("escrow_orders")
-          .select("id,dispute_status")
+          .select("id,dispute_status,paystack_reference,subtotal_kobo,total_kobo,seller_id")
           .eq("id", escrowOrderId)
           .maybeSingle();
         if (orderLoadErr) {
@@ -454,6 +584,108 @@ serve(async (req) => {
         }
 
         const now = new Date().toISOString();
+        const paystackRef = String((orderRow as any).paystack_reference ?? "").trim();
+        const subtotalKobo = Number((orderRow as any).subtotal_kobo ?? 0);
+        const sellerIdForDisp = String((orderRow as any).seller_id ?? "").trim();
+
+        // FIX 1b: Write DB to "resolving" BEFORE calling Paystack.
+        // Paystack call happens after — if it fails, admin can retry safely.
+        const preUpdates: Record<string, unknown> = {
+          dispute_status: "resolving",
+          dispute_resolved_at: now,
+          resolution,
+          settlement_admin_id: userId,
+          dispute_resolution_note: note || null,
+        };
+        if (note) preUpdates.settlement_note = note;
+
+        const { error: preErr } = await supabaseAdmin
+          .from("escrow_orders")
+          .update(preUpdates)
+          .eq("id", escrowOrderId)
+          .eq("dispute_status", "open"); // idempotency guard: only advance from "open"
+        if (preErr) {
+          return jsonResponse(500, { ok: false, error: "DB pre-update failed.", detail: preErr.message });
+        }
+
+        // Sync escrow_transactions to "resolving" (Fix 5)
+        await supabaseAdmin
+          .from("escrow_transactions")
+          .update({ status: "resolving", updated_at: now })
+          .eq("payment_reference", paystackRef)
+          .in("status", ["funded", "disputed", "awaiting_buyer_confirmation", "resolving"]);
+
+        let paystackResult: Record<string, unknown> = {};
+
+        if (resolution === "refund_buyer") {
+          if (!paystackSecretKey) {
+            return jsonResponse(500, { ok: false, error: "Paystack not configured." });
+          }
+          // FIX 2: refund subtotal_kobo (product price only), NOT total_kobo.
+          // The escrow fee is earned by the platform and is not refunded.
+          if (!paystackRef || subtotalKobo <= 0) {
+            return jsonResponse(400, { ok: false, error: "Cannot refund: missing reference or amount." });
+          }
+          try {
+            paystackResult = await paystackRefund(paystackSecretKey, paystackRef, subtotalKobo);
+          } catch (refundErr: any) {
+            console.error("[escrow_actions] paystack refund failed", refundErr);
+            return jsonResponse(500, { ok: false, error: "Refund failed. Order is marked 'resolving' — retry is safe.", detail: refundErr.message });
+          }
+        }
+
+        if (resolution === "release_to_seller") {
+          if (!paystackSecretKey) {
+            return jsonResponse(500, { ok: false, error: "Paystack not configured." });
+          }
+          if (!sellerIdForDisp || subtotalKobo <= 0) {
+            return jsonResponse(400, { ok: false, error: "Cannot transfer: missing seller or amount." });
+          }
+          const { data: bankRow } = await supabaseAdmin
+            .from("seller_bank_accounts")
+            .select("bank_code,account_number,account_name,paystack_recipient_code")
+            .eq("seller_id", sellerIdForDisp)
+            .maybeSingle();
+          if (!bankRow?.account_number || !bankRow?.bank_code) {
+            return jsonResponse(400, {
+              ok: false,
+              error: "Seller has no bank account on file. Ask seller to add bank details before releasing.",
+            });
+          }
+          try {
+            let recipientCode = String(bankRow.paystack_recipient_code ?? "").trim();
+            if (!recipientCode) {
+              recipientCode = await getOrCreatePaystackRecipient(
+                paystackSecretKey,
+                bankRow.account_number,
+                bankRow.bank_code,
+                bankRow.account_name ?? ""
+              );
+              // FIX 4: guard (getOrCreatePaystackRecipient now throws, but double-check)
+              if (!recipientCode) {
+                throw new Error("Paystack returned empty recipient_code");
+              }
+              await supabaseAdmin
+                .from("seller_bank_accounts")
+                .update({ paystack_recipient_code: recipientCode, updated_at: now })
+                .eq("seller_id", sellerIdForDisp);
+            }
+            // FIX 3: deterministic reference — no Date.now()
+            const transferRef = `smp_disp_${escrowOrderId}`;
+            paystackResult = await paystackTransferToSeller(
+              paystackSecretKey,
+              subtotalKobo,
+              recipientCode,
+              transferRef,
+              `ShowMePrice.ng dispute resolution payout`
+            );
+          } catch (transferErr: any) {
+            console.error("[escrow_actions] paystack transfer failed", transferErr);
+            return jsonResponse(500, { ok: false, error: "Transfer failed. Order is marked 'resolving' — retry is safe.", detail: transferErr.message });
+          }
+        }
+
+        // Paystack call succeeded — write final terminal state
         const updates: Record<string, unknown> = {
           dispute_status: "resolved",
           dispute_resolved_at: now,
@@ -480,19 +712,43 @@ serve(async (req) => {
           .select("id,dispute_status,resolution,released_at,refunded_at,dispute_resolved_at")
           .maybeSingle();
         if (upErr) {
-          return jsonResponse(500, { ok: false, error: "DB error", detail: upErr.message });
+          console.error("[escrow_actions] CRITICAL: Paystack call succeeded but final DB update failed", { escrowOrderId, upErr });
+          return jsonResponse(500, { ok: false, error: "Paystack action succeeded but final DB update failed. Check logs.", detail: upErr.message });
         }
+
+        // Fix 5: sync escrow_transactions final status
+        const txFinalStatus = resolution === "refund_buyer" ? "refund_to_buyer" : "released_to_seller";
+        await supabaseAdmin
+          .from("escrow_transactions")
+          .update({ status: txFinalStatus, updated_at: now })
+          .eq("payment_reference", paystackRef);
 
         const { error: eventErr } = await supabaseAdmin.from("escrow_events").insert({
           escrow_order_id: escrowOrderId,
           type: "dispute_resolved",
-          payload: { resolution, resolved_at: now },
+          payload: { resolution, resolved_at: now, paystack: paystackResult },
         });
         if (eventErr) {
           console.error("[escrow_actions] event insert failed", {
             message: eventErr.message,
             code: eventErr.code,
           });
+        }
+
+        // Notify both parties of dispute resolution
+        const eventType = resolution === "refund_buyer" ? "escrow_refunded_to_buyer" : "escrow_released_to_seller";
+        const recipientId = resolution === "refund_buyer" ? String((orderRow as any).buyer_id ?? "") : String((orderRow as any).seller_id ?? "");
+        if (recipientId) {
+          const { data: ru } = await supabaseAdmin.auth.admin.getUserById(recipientId);
+          if (ru?.user?.email) {
+            const { data: rp } = await supabaseAdmin.from("profiles").select("display_name,full_name").eq("id", recipientId).maybeSingle();
+            await sendNotification(supabaseUrl, internalSecret, {
+              event: eventType as any,
+              to_email: ru.user.email,
+              to_name: String((rp as any)?.display_name ?? (rp as any)?.full_name ?? ""),
+              data: { order_id: escrowOrderId, resolution, note },
+            });
+          }
         }
 
         console.log("[escrow_actions] admin_resolve_dispute ok", { userId, escrowOrderId, resolution });
@@ -530,7 +786,7 @@ serve(async (req) => {
 
         const { data: orderRow, error: orderLoadErr } = await supabaseAdmin
           .from("escrow_orders")
-          .select("id,status,delivery_status,dispute_status,released_at,settlement_status")
+          .select("id,status,delivery_status,dispute_status,released_at,settlement_status,seller_id,subtotal_kobo")
           .eq("id", escrowOrderId)
           .maybeSingle();
         if (orderLoadErr) {
@@ -561,7 +817,93 @@ serve(async (req) => {
           });
         }
 
+        if (!paystackSecretKey) {
+          return jsonResponse(500, { ok: false, error: "Paystack not configured." });
+        }
+
+        const sellerId = String((orderRow as any).seller_id ?? "").trim();
+        const subtotalKobo = Number((orderRow as any).subtotal_kobo ?? 0);
+        if (!sellerId || subtotalKobo <= 0) {
+          return jsonResponse(400, { ok: false, error: "Cannot transfer: missing seller or amount." });
+        }
+
+        const { data: bankRow } = await supabaseAdmin
+          .from("seller_bank_accounts")
+          .select("bank_code,account_number,account_name,paystack_recipient_code")
+          .eq("seller_id", sellerId)
+          .maybeSingle();
+        if (!bankRow?.account_number || !bankRow?.bank_code) {
+          return jsonResponse(400, {
+            ok: false,
+            error: "Seller has no bank account on file. Ask seller to add bank details before releasing.",
+          });
+        }
+
         const now = new Date().toISOString();
+
+        // FIX 1a: Write "releasing" to DB BEFORE calling Paystack.
+        // If transfer fails the DB record exists for safe retry.
+        // If DB update fails we never attempt a transfer.
+        const preUpdates: Record<string, unknown> = {
+          settlement_status: "releasing",
+          settlement_admin_id: userId,
+        };
+        if (note) preUpdates.settlement_note = note;
+
+        const { error: preErr } = await supabaseAdmin
+          .from("escrow_orders")
+          .update(preUpdates)
+          .eq("id", escrowOrderId)
+          // Guard: only advance from a non-terminal state
+          .in("settlement_status", ["pending", null, "releasing"]);
+        if (preErr) {
+          return jsonResponse(500, { ok: false, error: "DB pre-update failed.", detail: preErr.message });
+        }
+
+        // Sync escrow_transactions to "releasing" as well (Fix 5)
+        await supabaseAdmin
+          .from("escrow_transactions")
+          .update({ status: "releasing", updated_at: now })
+          .eq("payment_reference", String((orderRow as any).paystack_reference ?? ""))
+          .in("status", ["funded", "awaiting_buyer_confirmation", "pending_admin_release", "releasing"]);
+
+        let paystackTransferData: Record<string, unknown> = {};
+        try {
+          let recipientCode = String(bankRow.paystack_recipient_code ?? "").trim();
+          if (!recipientCode) {
+            recipientCode = await getOrCreatePaystackRecipient(
+              paystackSecretKey,
+              bankRow.account_number,
+              bankRow.bank_code,
+              bankRow.account_name ?? ""
+            );
+            // FIX 4: guard — getOrCreatePaystackRecipient now throws on empty,
+            // but double-check here before persisting an invalid code
+            if (!recipientCode) {
+              throw new Error("Paystack returned empty recipient_code");
+            }
+            await supabaseAdmin
+              .from("seller_bank_accounts")
+              .update({ paystack_recipient_code: recipientCode, updated_at: now })
+              .eq("seller_id", sellerId);
+          }
+          // FIX 3: deterministic reference — no Date.now(), Paystack deduplicates on this
+          const transferRef = `smp_rel_${escrowOrderId}`;
+          paystackTransferData = await paystackTransferToSeller(
+            paystackSecretKey,
+            subtotalKobo,
+            recipientCode,
+            transferRef,
+            `ShowMePrice.ng escrow payout`
+          );
+        } catch (transferErr: any) {
+          console.error("[escrow_actions] paystack transfer failed", transferErr);
+          // DB already marked "releasing" — admin can retry. Do NOT revert to avoid
+          // masking a transfer that may have succeeded before the error was thrown.
+          return jsonResponse(500, { ok: false, error: "Transfer failed. Order is marked 'releasing' — retry is safe.", detail: transferErr.message });
+        }
+
+        // Transfer succeeded — mark fully released
         const updates: Record<string, unknown> = {
           settlement_status: "released",
           released_at: now,
@@ -578,18 +920,41 @@ serve(async (req) => {
           .select("id,settlement_status,released_at,settlement_admin_id")
           .maybeSingle();
         if (upErr) {
-          return jsonResponse(500, { ok: false, error: "DB error", detail: upErr.message });
+          // Transfer already sent — log prominently but don't surface to caller as failure
+          console.error("[escrow_actions] CRITICAL: transfer sent but released_at update failed", { escrowOrderId, upErr });
+          return jsonResponse(500, { ok: false, error: "Transfer sent but final DB update failed. Check logs.", detail: upErr.message });
         }
+
+        // Fix 5: sync escrow_transactions final status
+        await supabaseAdmin
+          .from("escrow_transactions")
+          .update({ status: "released_to_seller", updated_at: now })
+          .eq("payment_reference", String((orderRow as any).paystack_reference ?? ""));
 
         const { error: eventErr } = await supabaseAdmin.from("escrow_events").insert({
           escrow_order_id: escrowOrderId,
           type: "funds_released_to_seller",
-          payload: { released_at: now },
+          payload: { released_at: now, paystack: paystackTransferData },
         });
         if (eventErr) {
           console.error("[escrow_actions] release event insert failed", {
             message: eventErr.message,
             code: eventErr.code,
+          });
+        }
+
+        // Notify seller that funds have been released
+        const { data: su } = await supabaseAdmin.auth.admin.getUserById(sellerId);
+        if (su?.user?.email) {
+          const { data: sp } = await supabaseAdmin.from("profiles").select("display_name,full_name").eq("id", sellerId).maybeSingle();
+          await sendNotification(supabaseUrl, internalSecret, {
+            event: "escrow_released_to_seller",
+            to_email: su.user.email,
+            to_name: String((sp as any)?.display_name ?? (sp as any)?.full_name ?? ""),
+            data: {
+              order_id: escrowOrderId,
+              amount: String(Math.round(subtotalKobo / 100)),
+            },
           });
         }
 

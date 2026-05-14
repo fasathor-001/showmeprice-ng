@@ -303,11 +303,50 @@ serve(async (req) => {
     }
 
     const nowIso = new Date().toISOString();
-    await db
+    const { data: fundedOrder } = await db
       .from("escrow_orders")
       .update({ status: "funded", paid_at: nowIso, updated_at: nowIso })
       .eq("paystack_reference", reference)
-      .in("status", ["initialized", "pending_payment", "pending", "funded"]);
+      .in("status", ["initialized", "pending_payment", "pending", "funded"])
+      .select("id,buyer_id,total_kobo")
+      .maybeSingle();
+
+    // Also sync escrow_transactions (client-facing table)
+    await db
+      .from("escrow_transactions")
+      .update({ status: "funded", updated_at: nowIso })
+      .eq("payment_reference", reference)
+      .in("status", ["pending_payment", "initialized", "pending"]);
+
+    // Fire payment-confirmed email to buyer
+    const internalSecret = Deno.env.get("INTERNAL_FUNCTION_SECRET") ?? "";
+    if (internalSecret && fundedOrder?.buyer_id) {
+      try {
+        const { data: buyerAuth } = await db.auth.admin.getUserById(String(fundedOrder.buyer_id));
+        if (buyerAuth?.user?.email) {
+          const { data: buyerProf } = await db
+            .from("profiles")
+            .select("display_name,full_name")
+            .eq("id", String(fundedOrder.buyer_id))
+            .maybeSingle();
+          await fetch(`${supabaseUrl}/functions/v1/notify`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-internal-secret": internalSecret },
+            body: JSON.stringify({
+              event: "escrow_payment_confirmed",
+              to_email: buyerAuth.user.email,
+              to_name: String((buyerProf as any)?.display_name ?? (buyerProf as any)?.full_name ?? ""),
+              data: {
+                order_id: String(fundedOrder.id ?? ""),
+                amount: String(Math.round(Number(fundedOrder.total_kobo ?? 0) / 100)),
+              },
+            }),
+          });
+        }
+      } catch (e) {
+        console.error("paystack-webhook:notify error", e);
+      }
+    }
   }
 
   return new Response("OK", { status: 200 });
