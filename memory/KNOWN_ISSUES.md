@@ -60,7 +60,7 @@ Configuration includes `${origin}/reset-password` in the redirect allow list.
 
 ### #3 — WhatsApp contact reveal silently fails
 Severity: CRITICAL
-Status: OPEN
+Status: RESOLVED — 2026-05-14
 
 `src/hooks/useContactReveal.ts` reads `FF.whatsapp_number` to check the
 WhatsApp reveal feature flag. The correct export from `useFF` is `FF.whatsapp`
@@ -68,8 +68,13 @@ WhatsApp reveal feature flag. The correct export from `useFF` is `FF.whatsapp`
 the check `if (!FF.whatsapp_number)` is always true, silently blocking WhatsApp
 reveals regardless of flag state.
 
-Fix required: Change `FF.whatsapp_number` to `FF.whatsapp` in
-`src/hooks/useContactReveal.ts`. Verify `useSellerContact.ts` for the same bug.
+Resolution: Changed `FF.whatsapp_number` to `FF.whatsapp` in both
+`src/hooks/useContactReveal.ts` and `src/hooks/useSellerContact.ts`.
+The wa.me URL formatting in `ProductDetail.tsx` handleWhatsApp() was already
+correct (handles `0XXXXXXXXXX` and `+234XXXXXXXXX` input formats).
+The RPC `reveal_seller_contact` returns `whatsapp_number` column from the
+`businesses` table — the client already reads this via
+`(row as any)?.whatsapp_number` — correct and unchanged.
 
 ---
 

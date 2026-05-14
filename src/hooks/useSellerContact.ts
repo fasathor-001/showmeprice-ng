@@ -30,7 +30,7 @@ export function useSellerContact() {
   const viewerRole = useMemo(() => normalize((profile as any)?.role ?? ""), [profile]);
   const viewerPaid = useMemo(() => viewerRole === "admin" || isPaidTier(viewerTier), [viewerRole, viewerTier]);
 
-  const whatsappEnabled = !!FF.whatsapp_number;
+  const whatsappEnabled = !!FF.whatsapp;
   const phoneEnabled = !!FF.phoneCall;
 
   const [loading, setLoading] = useState(false);

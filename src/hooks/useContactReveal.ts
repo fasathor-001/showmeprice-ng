@@ -18,7 +18,7 @@ export function useContactReveal() {
   const { profile } = useProfile() as any;
   const FF = useFF();
 
-  const whatsappEnabled = !!FF.whatsapp_number;
+  const whatsappEnabled = !!FF.whatsapp;
   const phoneEnabled = !!FF.phoneCall;
 
   const [data, setData] = useState<SellerContact | null>(null);
