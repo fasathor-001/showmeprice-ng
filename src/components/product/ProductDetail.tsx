@@ -244,6 +244,8 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
   const [offerSending, setOfferSending] = useState(false);
   const [offerAmount, setOfferAmount] = useState("");
   const [offerNote, setOfferNote] = useState("");
+  const [buyWithEscrowSending, setBuyWithEscrowSending] = useState(false);
+  const [buyWithEscrowDone, setBuyWithEscrowDone] = useState(false);
 
   // Social hooks
   const { liked, count: likeCount, mutating: likeMutating, toggleLike } = useProductLike(productId);
@@ -392,6 +394,30 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
     requireAuthOr(() => setOfferOpen(true), "make_offer");
   };
 
+  const handleBuyWithEscrow = () => {
+    if (buyWithEscrowSending || buyWithEscrowDone) return;
+    requireAuthOr(async () => {
+      if (!productId) { emitToast("error", "Product not found."); return; }
+      setBuyWithEscrowSending(true);
+      try {
+        const { data, error } = await invokeAuthedFunction("offer_create", {
+          body: {
+            productId: String(productId),
+            offer_amount_kobo: Math.round(priceNaira * 100),
+            message: null,
+          },
+        });
+        if (error || !data) throw new Error((error as any)?.message ?? "Failed to send buy request.");
+        setBuyWithEscrowDone(true);
+        emitToast("success", "Buy request sent! The seller will confirm and then you can pay via escrow.");
+      } catch (err: any) {
+        emitToast("error", err?.message ?? "Failed to send buy request.");
+      } finally {
+        setBuyWithEscrowSending(false);
+      }
+    }, "buy_with_escrow");
+  };
+
   const handleOfferSend = async () => {
     if (!user?.id) {
       emitToast("info", "Please sign in to make an offer");
@@ -524,8 +550,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
     showEscrow &&
     escrowMinEligible &&
     sellerUserId &&
-    !isOwner &&
-    (!accountStatus.isLoggedIn || (accountStatus.ready && (isBuyerAccount || isInstitutionBuyer)));
+    !isOwner;
   const escrowUpsell =
     accountStatus.isLoggedIn && accountStatus.ready && !escrowEligible && !isInstitutionBuyer;
 
@@ -787,10 +812,10 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
       {/* Main scroll area */}
       <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
         <div className="px-4 md:px-6 lg:px-8 py-6 h-full">
-          <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr_0.85fr] gap-6 min-h-0">
+          <div className="grid grid-cols-1 lg:grid-cols-[1.15fr_1fr_0.85fr] gap-6 min-h-0 items-stretch">
             {/* LEFT: Media */}
-            <div className="bg-slate-100 rounded-2xl overflow-hidden">
-              <div className="min-h-[260px] md:min-h-[520px] flex items-center justify-center relative">
+            <div className="bg-slate-100 rounded-2xl overflow-hidden flex flex-col h-full">
+              <div className="min-h-[320px] md:min-h-[600px] flex-1 flex items-center justify-center relative">
                 {activeImage ? (
                   <img
                     src={activeImage}
@@ -818,7 +843,7 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                       <button
                         key={`${img}-${idx}`}
                         onClick={() => setActiveImage(img)}
-                        className={`w-16 h-16 rounded-lg border-2 overflow-hidden flex-shrink-0 transition ${
+                        className={`w-[72px] h-[72px] rounded-lg border-2 overflow-hidden flex-shrink-0 transition ${
                           activeImage === img ? "border-brand" : "border-white"
                         } shadow-sm bg-white`}
                         type="button"
@@ -833,128 +858,119 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
             </div>
 
             {/* MIDDLE: Details */}
-            <div className="min-w-0 lg:overflow-y-auto lg:max-h-[calc(90vh-6rem)] lg:pr-2">
-              <div className="flex flex-wrap gap-2 mb-3">
-                <span className="px-2.5 py-1 bg-slate-100 text-slate-600 text-xs font-bold uppercase rounded tracking-wider border border-slate-200">
+            <div className="min-w-0 lg:overflow-y-auto lg:max-h-[calc(90vh-6rem)] lg:pr-2 space-y-5">
+
+              {/* Badges — compact, low-noise */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
                   {conditionLabel || "New"}
                 </span>
-
                 {categoryName ? (
-                  <span className="px-2.5 py-1 bg-brand/10 text-brand text-xs font-bold uppercase rounded tracking-wider border border-brand/20">
+                  <span className="text-[11px] font-semibold text-brand bg-brand/8 px-2 py-0.5 rounded-md">
                     {categoryName}
                   </span>
                 ) : null}
-
                 {sellerTierLabel ? (
-                  <span className="px-2.5 py-1 bg-amber-100 text-amber-700 text-xs font-bold uppercase rounded tracking-wider border border-amber-200 flex items-center gap-1">
-                    <Crown className="w-3 h-3 fill-amber-700 text-amber-700" /> {sellerTierLabel}
+                  <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Crown className="w-2.5 h-2.5 fill-amber-700 text-amber-700" /> {sellerTierLabel}
                   </span>
                 ) : null}
-
                 {isSellerVerified ? (
-                  <span className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold uppercase rounded tracking-wider border border-emerald-200 flex items-center gap-1">
-                    <BadgeCheck className="w-3 h-3" /> Verified Seller
+                  <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <BadgeCheck className="w-2.5 h-2.5" /> Verified
                   </span>
                 ) : null}
               </div>
 
-              <h2 className="text-2xl md:text-3xl font-semibold text-slate-900 leading-tight">
-                {title || "Untitled Product"}
-              </h2>
-              {isSold ? (
-                <div className="mt-2 inline-flex items-center px-2.5 py-1 rounded-lg bg-rose-100 text-rose-700 text-xs font-black">
-                  SOLD
-                </div>
-              ) : null}
-
-              <div className="flex items-end gap-3 mt-3 mb-4">
-                <span className="text-3xl font-black text-brand">{formatMoneyNGN(price)}</span>
-                {hasDiscount ? (
-                  <span className="text-lg text-slate-400 line-through font-medium mb-1">
-                    {formatMoneyNGN(originalPrice)}
-                  </span>
-                ) : null}
-              </div>
-
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 text-sm text-slate-600">
-                <div className="flex items-start gap-2">
-                  <MapPin className="w-4 h-4 text-slate-400 mt-0.5" />
-                  <div className="leading-tight">
-                    <div className="font-semibold text-slate-800">{stateName || "State"}</div>
-                    {cityName ? <div className="text-slate-500">{cityName}</div> : null}
+              {/* Title + sold badge */}
+              <div>
+                <h2 className="text-xl md:text-2xl font-bold text-slate-900 leading-snug">
+                  {title || "Untitled Product"}
+                </h2>
+                {isSold ? (
+                  <div className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded bg-rose-100 text-rose-700 text-xs font-black tracking-wide">
+                    SOLD
                   </div>
-                </div>
+                ) : null}
+              </div>
 
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-slate-400" />
+              {/* Price — prominent on mobile (right panel is below); smaller on desktop where right panel is adjacent */}
+              <div className="flex items-baseline gap-2.5">
+                <span className="text-2xl font-black text-slate-900 lg:text-xl lg:font-bold lg:text-slate-700">
+                  {formatMoneyNGN(price)}
+                </span>
+                {hasDiscount ? (
+                  <span className="text-sm text-slate-400 line-through">{formatMoneyNGN(originalPrice)}</span>
+                ) : null}
+              </div>
+
+              {/* Location + Date — single compact row */}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                <div className="flex items-center gap-1">
+                  <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  <span>{[cityName, stateName].filter(Boolean).join(", ") || "Nigeria"}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Clock className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                   <span>Posted {formatDate(createdAt) || "Recently"}</span>
                 </div>
               </div>
 
-              <div className="mt-6">
-                <h3 className="font-bold text-slate-900 mb-2">Description</h3>
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  <p className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap break-words">
-                    {description || "No description provided by the seller."}
-                  </p>
-                </div>
+              {/* Description */}
+              <div>
+                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Description</h3>
+                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap break-words">
+                  {description || "No description provided by the seller."}
+                </p>
               </div>
 
-              <div className="mt-6">
-                <h3 className="font-bold text-slate-900 mb-2">Details</h3>
-                <div className="grid grid-cols-2 gap-3 text-sm text-slate-600">
-                  <div className="bg-white border border-slate-200 rounded-lg p-3">
-                    <div className="text-xs text-slate-400 font-semibold uppercase">Condition</div>
-                    <div className="font-bold text-slate-800">{conditionLabel || "N/A"}</div>
+              {/* Product Information */}
+              <div>
+                <h3 className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Product Information</h3>
+                <dl className="rounded-xl border border-slate-100 overflow-hidden divide-y divide-slate-100 text-sm">
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-white">
+                    <dt className="text-slate-500">Condition</dt>
+                    <dd className="font-semibold text-slate-800">{conditionLabel || "N/A"}</dd>
                   </div>
-                  <div className="bg-white border border-slate-200 rounded-lg p-3">
-                    <div className="text-xs text-slate-400 font-semibold uppercase">Category</div>
-                    <div className="font-bold text-slate-800">{categoryName || "General"}</div>
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-white">
+                    <dt className="text-slate-500">Category</dt>
+                    <dd className="font-semibold text-slate-800">{categoryName || "General"}</dd>
                   </div>
-                  <div className="bg-white border border-slate-200 rounded-lg p-3">
-                    <div className="text-xs text-slate-400 font-semibold uppercase">Location</div>
-                    <div className="font-bold text-slate-800">{[cityName, stateName].filter(Boolean).join(", ") || "Nigeria"}</div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-lg p-3">
-                    <div className="text-xs text-slate-400 font-semibold uppercase">Posted</div>
-                    <div className="font-bold text-slate-800">{formatDate(createdAt) || "Recently"}</div>
-                  </div>
-                </div>
+                </dl>
               </div>
 
-              <div className="mt-6 bg-amber-50 border border-amber-100 rounded-xl p-4">
-                <div className="flex items-center gap-2 text-amber-800 text-sm font-bold mb-2">
-                  <AlertTriangle className="w-4 h-4" />
+              {/* Safety Tips — muted, compact */}
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
                   Safety Tips
                 </div>
-                <ul className="text-xs text-amber-900/80 space-y-1 list-disc list-inside">
-                  <li>Meet in a public place for inspections.</li>
-                  <li>Never pay before inspecting the item.</li>
-                  <li>Use escrow for added buyer protection.</li>
+                <ul className="text-xs text-slate-500 space-y-0.5">
+                  <li>{"·"} Meet in a public place for inspections.</li>
+                  <li>{"·"} Never pay before inspecting the item.</li>
+                  <li>{"·"} Use escrow for added buyer protection.</li>
                 </ul>
               </div>
 
               {/* Institution tools */}
               <FeatureGate flagKey="institution_tools_enabled">
                 {institution ? (
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mt-6">
-                    <div className="flex items-center gap-2 mb-3 text-sm font-bold text-slate-700">
-                      <AlertTriangle className="w-4 h-4 text-brand" />
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <div className="flex items-center gap-2 mb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      <AlertTriangle className="w-3.5 h-3.5 text-brand flex-shrink-0" />
                       Institution Tools
                     </div>
-
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-2">
                       <button
                         onClick={handleAddToProcurement}
                         disabled={isAddingToProc}
-                        className="bg-white border border-slate-300 text-slate-700 py-2 rounded-lg text-xs font-bold hover:bg-slate-100 flex items-center justify-center gap-2 disabled:opacity-60"
+                        className="bg-white border border-slate-200 text-slate-700 py-2 rounded-lg text-xs font-bold hover:bg-slate-100 flex items-center justify-center gap-2 disabled:opacity-60"
                       >
                         {isAddingToProc ? "Adding..." : "Add to Procurement"}
                       </button>
-
                       <button
                         onClick={handleBulkQuote}
-                        className="bg-white border border-slate-300 text-slate-700 py-2 rounded-lg text-xs font-bold hover:bg-slate-100 flex items-center justify-center gap-2"
+                        className="bg-white border border-slate-200 text-slate-700 py-2 rounded-lg text-xs font-bold hover:bg-slate-100 flex items-center justify-center gap-2"
                       >
                         Request Bulk Quote
                       </button>
@@ -963,293 +979,288 @@ export default function ProductDetail({ product, onClose }: ProductDetailProps) 
                 ) : null}
               </FeatureGate>
 
-              {/* Comments */}
-              <div className="mt-8">
+              {/* Comments — low visual priority */}
+              <div className="pt-4 border-t border-slate-100">
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-bold text-slate-900">Comments</h3>
-                  <span className="text-xs text-slate-500">{comments.length} comments</span>
+                  <h3 className="text-sm font-bold text-slate-500">Comments</h3>
+                  <span className="text-[11px] text-slate-400">{comments.length} comments</span>
                 </div>
 
-                <div className="bg-white border border-slate-200 rounded-xl p-4">
+                <div className="space-y-3">
                   <div className="flex gap-2">
                     <textarea
                       value={commentBody}
                       onChange={(e) => setCommentBody(e.target.value)}
                       rows={2}
                       placeholder="Write a comment..."
-                      className="flex-1 resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30"
+                      className="flex-1 resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 bg-white"
                     />
                     <button
                       type="button"
                       onClick={handleAddComment}
                       disabled={commentSubmitting}
-                      className="h-10 px-4 rounded-lg bg-brand text-white font-bold text-sm hover:opacity-90 disabled:opacity-60 flex items-center gap-2"
+                      className="h-9 px-3 rounded-lg bg-brand text-white font-bold text-sm hover:opacity-90 disabled:opacity-60 flex items-center gap-1.5 self-start mt-0.5"
                     >
-                      <Send className="w-4 h-4" />
+                      <Send className="w-3.5 h-3.5" />
                       Post
                     </button>
                   </div>
-                  {commentError ? <div className="text-xs text-rose-600 mt-2">{commentError}</div> : null}
+                  {commentError ? <div className="text-xs text-rose-500">{commentError}</div> : null}
 
-                  <div className="mt-4 space-y-3">
+                  <div className="space-y-2">
                     {commentsLoading ? (
-                      <div className="text-xs text-slate-500">Loading comments...</div>
+                      <div className="text-xs text-slate-400">Loading comments...</div>
                     ) : comments.length === 0 ? (
-                      <div className="text-xs text-slate-500">No comments yet. Be the first to comment.</div>
+                      <div className="text-xs text-slate-400">No comments yet.</div>
                     ) : (
                       comments.map((comment) => (
-                        <div key={comment.id} className="border border-slate-100 rounded-lg p-3 bg-slate-50">
-                          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-                            <span className="font-bold text-slate-700">{resolveCommentName(comment.user_id)}</span>
+                        <div key={comment.id} className="rounded-lg px-3 py-2.5 bg-slate-50 border border-slate-100">
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                            <span className="font-semibold text-slate-600">{resolveCommentName(comment.user_id)}</span>
                             <span>{formatDate(comment.created_at)}</span>
                           </div>
-                          <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{comment.body}</p>
+                          <p className="text-xs text-slate-600 whitespace-pre-wrap break-words leading-relaxed">{comment.body}</p>
                         </div>
                       ))
                     )}
                   </div>
                 </div>
               </div>
-            </div>
-            {/* RIGHT: Action Card */}
-            <div className="lg:sticky lg:top-6 h-fit">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-xs uppercase tracking-wider text-slate-500 font-bold">Price</div>
-                    <div className="text-2xl font-black text-slate-900">{formatMoneyNGN(price)}</div>
-                  </div>
 
+            </div>
+            {/* RIGHT: Action Panel */}
+            <div className="lg:sticky lg:top-6 h-fit space-y-3">
+
+              {/* ── 1. MAIN ACTION CARD ── */}
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                {/* Price row */}
+                <div className="px-5 pt-5 pb-4 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-3xl font-black text-slate-900 tracking-tight leading-none">
+                      {formatMoneyNGN(price)}
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1.5">{likeCount} people saved this</div>
+                  </div>
                   <button
                     type="button"
                     onClick={handleToggleLike}
                     disabled={likeMutating}
-                    className={`rounded-full border p-2 transition ${
-                      liked ? "border-rose-200 bg-rose-50 text-rose-600" : "border-slate-200 text-slate-500"
+                    className={`rounded-full border p-2 transition flex-shrink-0 ${
+                      liked
+                        ? "border-rose-200 bg-rose-50 text-rose-600"
+                        : "border-slate-200 text-slate-500 hover:border-rose-200 hover:text-rose-400"
                     }`}
                     title={liked ? "Unsave" : "Save"}
                   >
                     <Heart className={`w-4 h-4 ${liked ? "fill-rose-500 text-rose-500" : ""}`} />
                   </button>
                 </div>
-                <div className="text-xs text-slate-500 mt-2">{likeCount} saved</div>
 
-                <div
-                  className={`mt-4 rounded-xl p-4 border ${
-                    isSellerPremium
-                      ? "bg-gradient-to-br from-slate-900 to-slate-800 text-white border-slate-700"
-                      : "bg-white border-slate-200"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className={`text-xs font-bold uppercase tracking-wider ${isSellerPremium ? "text-slate-300" : "text-slate-500"}`}>
-                        Seller{businessName && businessName !== "Seller" ? ":" : ""}
-                      </p>
-                      <div className={`mt-1 font-black text-lg flex items-center gap-2 ${isSellerPremium ? "text-white" : "text-slate-900"}`}>
-                        <span className="truncate">{businessName}</span>
-                        {isSellerVerified ? (
-                          <Crown
-                            className={`w-5 h-5 ${isSellerPremium ? "text-amber-400 fill-amber-400" : "text-brand fill-brand"}`}
-                            title="Verified Seller"
-                          />
-                        ) : null}
+                {/* Action buttons — non-owner only */}
+                {!isOwner ? (
+                  <div className="px-5 pb-5 border-t border-slate-100 pt-4 space-y-2.5">
+                    {buyWithEscrowDone ? (
+                      <div className="rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800 font-semibold text-center">
+                        {"✓"} Request sent!{" "}
+                        <button
+                          type="button"
+                          onClick={() => { window.history.pushState({}, "", "/my-offers"); window.dispatchEvent(new Event("smp:navigate")); }}
+                          className="underline font-black"
+                        >
+                          Check My Offers
+                        </button>
                       </div>
-                      <div className={`text-xs mt-1 flex items-center gap-2 ${isSellerPremium ? "text-slate-300" : "text-slate-500"}`}>
-                        {sellerBadgeLabel ? (
-                          <>
-                            <span className={`${verificationTone} font-bold`}>{sellerBadgeLabel}</span>
-                            <span className="w-1 h-1 rounded-full bg-slate-400"></span>
-                          </>
-                        ) : null}
-                        <div className="flex items-center gap-1">
-                          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                          <span className="font-bold">4.8</span>
-                          <span>(15)</span>
-                        </div>
-                      </div>
-                    </div>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleBuyWithEscrow}
+                          disabled={buyWithEscrowSending}
+                          className="w-full rounded-xl bg-emerald-600 text-white font-black py-3.5 text-sm hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-70 transition shadow-sm flex items-center justify-center gap-2"
+                        >
+                          {"🔒"}{" "}
+                          {buyWithEscrowSending
+                            ? "Sending request..."
+                            : `Buy with Escrow Protection (${formatMoneyNGN(priceNaira)})`}
+                        </button>
+                        <p className="text-xs text-slate-500 text-center">
+                          Seller confirms your order, then you pay securely with escrow.
+                        </p>
+                      </>
+                    )}
 
-                    <div
-                      className={`w-11 h-11 rounded-full flex items-center justify-center font-black text-lg border-2 flex-shrink-0 ${
-                        isSellerPremium ? "bg-amber-500 border-amber-400 text-white" : "bg-brand/10 border-brand/20 text-brand"
-                      }`}
-                      aria-hidden
-                    >
-                      {String(businessName || "S").charAt(0).toUpperCase()}
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleToggleFollow();
-                    }}
-                    disabled={followMutating || !businessId}
-                    className={`mt-4 w-full rounded-lg border px-3 py-2 text-sm font-bold flex items-center justify-center gap-2 transition ${
-                      following
-                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                        : "border-slate-200 text-slate-700 hover:bg-slate-50"
-                    }`}
-                  >
-                    <UserPlus className="w-4 h-4" />
-                    {following ? "Following" : "Follow Seller"}
-                  </button>
-                </div>
-
-                {showEscrow && !escrowMinEligible ? (
-                  <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
-                    Escrow available for ₦{Number(MIN_ESCROW_NAIRA).toLocaleString("en-NG")}+ items.
-                  </div>
-                ) : null}
-
-                {escrowCtaVisible ? (
-                  <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/70 p-4">
-                    <div className="text-sm font-black text-emerald-900">{"\uD83D\uDD12"} Pay with Escrow</div>
-                    <p className="text-xs text-emerald-800/80 mt-2">
-                      {!user
-                        ? "Secure payments with escrow."
-                        : escrowEligible || isInstitutionBuyer
-                        ? `Total includes escrow fee of ${formatNairaFromKobo(escrowFeeKobo)}.`
-                        : "Upgrade to Premium to pay with Escrow."}
-                    </p>
-                    {escrowEligible || isInstitutionBuyer ? (
-                      <div className="mt-2 text-xs text-emerald-900/90 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span>Item</span>
-                          <span>{formatNairaFromKobo(escrowSubtotalKobo)}</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span>Escrow protection fee</span>
-                          <span>{formatNairaFromKobo(escrowFeeKobo)}</span>
-                        </div>
-                        <div className="flex items-center justify-between font-black text-emerald-900">
-                          <span>Total</span>
-                          <span>{formatNairaFromKobo(escrowTotalKobo)}</span>
-                        </div>
-                      </div>
+                    {offersEnabled ? (
+                      <button
+                        type="button"
+                        onClick={handleMakeOfferClick}
+                        className="w-full py-3 rounded-xl font-bold text-sm transition border-2 border-slate-200 text-slate-700 hover:border-slate-300 hover:bg-slate-50 flex items-center justify-center gap-2"
+                      >
+                        Make an Offer
+                      </button>
                     ) : null}
-                    <button
-                      type="button"
-                      onClick={escrowUpsell ? () => openPricing("escrow") : handlePayWithEscrow}
-                      disabled={escrowStarting}
-                      className="mt-3 w-full rounded-lg bg-emerald-600 text-white text-sm font-black py-3 hover:bg-emerald-700 disabled:opacity-70"
-                    >
-                      {!user
-                        ? "Pay with Escrow"
-                        : escrowUpsell
-                        ? "See plans"
-                        : escrowStarting
-                        ? "Starting escrow..."
-                        : `Pay ${formatNairaFromKobo(escrowTotalKobo)} with Escrow`}
-                    </button>
-                    {escrowError ? <div className="mt-2 text-xs text-rose-700">{escrowError}</div> : null}
-                  </div>
-                ) : null}
 
-                <div className="mt-4">
-                  <div className="grid gap-2">
                     <button
                       onClick={() => handleMessageSeller()}
                       disabled={!canInAppMessage && !!user}
-                      className={`w-full py-3 rounded-xl font-bold text-sm transition border flex items-center justify-center gap-2 ${
+                      className={`w-full py-2.5 rounded-xl font-semibold text-sm transition border flex items-center justify-center gap-2 ${
                         !canInAppMessage && !!user
-                          ? "bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200"
-                          : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50"
+                          ? "border-slate-100 text-slate-400 cursor-not-allowed"
+                          : "border-slate-200 text-slate-600 hover:bg-slate-50"
                       }`}
                       title={!canInAppMessage ? "Messaging is currently disabled." : ""}
                     >
                       <MessageCircle className="w-4 h-4" />
-                      Message Seller {user ? "" : "(Login Required)"}
+                      Message Seller{user ? "" : " (Login Required)"}
                     </button>
-                    {offersEnabled && !isOwner ? (
-                      <button
-                        type="button"
-                        onClick={handleMakeOfferClick}
-                        className="w-full py-3 rounded-xl font-bold text-sm transition border flex items-center justify-center gap-2 bg-white text-slate-800 border-slate-200 hover:bg-slate-50"
-                      >
-                        Make Offer
-                      </button>
-                    ) : null}
+                  </div>
+                ) : null}
+              </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => smartContactAction("call")}
-                        className="py-3 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50"
-                        disabled={revealLoading}
-                        type="button"
-                        title={
-                          !user
-                            ? "Login required"
-                            : !canRevealContact
-                            ? "Pro/Premium required"
-                            : !revealed
-                            ? "Reveal required"
-                            : ""
-                        }
-                      >
-                        <Phone className="w-4 h-4" />
-                        {revealed && contactData?.phone ? contactData.phone : "Call"}
-                      </button>
-
-                      <button
-                        onClick={() => smartContactAction("whatsapp_number")}
-                        className="py-3 rounded-xl font-bold text-sm transition flex items-center justify-center gap-2 bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
-                        disabled={revealLoading}
-                        type="button"
-                        title={
-                          !user
-                            ? "Login required"
-                            : !canRevealContact
-                            ? "Pro/Premium required"
-                            : !revealed
-                            ? "Reveal required"
-                            : ""
-                        }
-                      >
-                        <MessageCircle className="w-4 h-4" />
-                        WhatsApp
-                      </button>
+              {/* ── 2. SELLER TRUST CARD ── */}
+              <div
+                className={`rounded-2xl border p-4 shadow-sm ${
+                  isSellerPremium
+                    ? "bg-gradient-to-br from-slate-900 to-slate-800 border-slate-700"
+                    : "bg-white border-slate-200"
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`w-11 h-11 rounded-full flex items-center justify-center font-black text-lg border-2 flex-shrink-0 ${
+                      isSellerPremium
+                        ? "bg-amber-500 border-amber-400 text-white"
+                        : "bg-brand/10 border-brand/20 text-brand"
+                    }`}
+                    aria-hidden
+                  >
+                    {String(businessName || "S").charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className={`font-black text-base flex items-center gap-1.5 ${isSellerPremium ? "text-white" : "text-slate-900"}`}>
+                      <span className="truncate">{businessName}</span>
+                      {isSellerVerified ? (
+                        <Crown
+                          className={`w-4 h-4 flex-shrink-0 ${isSellerPremium ? "text-amber-400 fill-amber-400" : "text-brand fill-brand"}`}
+                          title="Verified Seller"
+                        />
+                      ) : null}
+                    </div>
+                    <div className={`text-xs mt-0.5 flex items-center gap-1.5 flex-wrap ${isSellerPremium ? "text-slate-300" : "text-slate-500"}`}>
+                      {sellerBadgeLabel ? (
+                        <>
+                          <span className={`${verificationTone} font-bold`}>{sellerBadgeLabel}</span>
+                          <span className="w-1 h-1 rounded-full bg-current opacity-40" />
+                        </>
+                      ) : null}
+                      <div className="flex items-center gap-1">
+                        <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+                        <span className="font-bold">4.8</span>
+                        <span>(15 reviews)</span>
+                      </div>
+                    </div>
+                    <div className={`text-xs mt-1 font-semibold ${isSellerPremium ? "text-emerald-400" : "text-emerald-600"}`}>
+                      {"✓"} Trusted seller on ShowMePrice
                     </div>
                   </div>
-
-                  {!user ? (
-                    <p className="text-xs text-slate-500 mt-3">
-                      Login to message or reveal seller contact.
-                    </p>
-                  ) : !canRevealContact ? (
-                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                      <div className="text-xs font-black text-amber-900">Unlock seller contact</div>
-                      <div className="text-xs text-amber-800 mt-1">Upgrade to Pro to call or chat on WhatsApp.</div>
-                      <button
-                        type="button"
-                        onClick={() => openPricing("contact")}
-                        className="mt-2 text-xs font-bold underline text-amber-800 hover:text-amber-900"
-                      >
-                        See plans
-                      </button>
-                    </div>
-                  ) : !revealed ? (
-                    <button
-                      type="button"
-                      onClick={handleReveal}
-                      disabled={revealLoading}
-                      className="text-xs font-bold underline text-slate-800 hover:text-slate-900 mt-3"
-                    >
-                      {revealLoading ? "Revealing..." : "Reveal contact info"}
-                    </button>
-                  ) : null}
                 </div>
 
                 <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleToggleFollow(); }}
+                  disabled={followMutating || !businessId}
+                  className={`mt-3 w-full rounded-lg border px-3 py-2 text-sm font-bold flex items-center justify-center gap-2 transition ${
+                    following
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : isSellerPremium
+                      ? "border-slate-600 text-slate-200 hover:bg-slate-700"
+                      : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <UserPlus className="w-4 h-4" />
+                  {following ? "Following" : "Follow Seller"}
+                </button>
+              </div>
+
+              {/* ── 3. CONTACT OPTIONS ── */}
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 shadow-sm space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => smartContactAction("call")}
+                    className="py-2.5 rounded-xl text-sm transition flex items-center justify-center gap-1.5 bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                    disabled={revealLoading}
+                    type="button"
+                    title={!user ? "Login required" : !canRevealContact ? "Pro/Premium required" : !revealed ? "Reveal required" : ""}
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    {revealed && contactData?.phone ? contactData.phone : "Call"}
+                  </button>
+                  <button
+                    onClick={() => smartContactAction("whatsapp_number")}
+                    className="py-2.5 rounded-xl text-sm transition flex items-center justify-center gap-1.5 bg-white border border-emerald-200 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    disabled={revealLoading}
+                    type="button"
+                    title={!user ? "Login required" : !canRevealContact ? "Pro/Premium required" : !revealed ? "Reveal required" : ""}
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    WhatsApp
+                  </button>
+                </div>
+
+                {!user ? (
+                  <p className="text-xs text-slate-400 text-center">Login to reveal seller contact.</p>
+                ) : !canRevealContact ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <div className="text-xs font-black text-amber-900">Unlock seller contact</div>
+                    <div className="text-xs text-amber-800 mt-1">Upgrade to Pro to call or chat on WhatsApp.</div>
+                    <button
+                      type="button"
+                      onClick={() => openPricing("contact")}
+                      className="mt-1.5 text-xs font-bold underline text-amber-800 hover:text-amber-900"
+                    >
+                      See plans
+                    </button>
+                  </div>
+                ) : !revealed ? (
+                  <button
+                    type="button"
+                    onClick={handleReveal}
+                    disabled={revealLoading}
+                    className="w-full text-xs font-bold underline text-slate-600 hover:text-slate-900"
+                  >
+                    {revealLoading ? "Revealing..." : "Reveal contact info"}
+                  </button>
+                ) : null}
+              </div>
+
+              {/* ── 4. ESCROW SAFETY NOTE (compact) ── */}
+              {!isOwner ? (
+                <div className="px-1 space-y-1.5">
+                  {[
+                    "Payment secured by ShowMePrice",
+                    "Seller gets paid after your delivery confirmation",
+                    "Full refund if item is not as described",
+                  ].map((line) => (
+                    <div key={line} className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                      <BadgeCheck className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                      {line}
+                    </div>
+                  ))}
+                  <p className="text-[11px] text-slate-400 pt-0.5">
+                    {"⚠"} Avoid paying outside escrow — you will not be protected.
+                  </p>
+                </div>
+              ) : null}
+
+              {/* Report */}
+              <div className="text-center pb-1">
+                <button
                   onClick={() => setIsReporting(true)}
-                  className="mt-5 text-slate-400 text-xs font-medium hover:text-red-500 transition flex items-center gap-2"
+                  className="text-slate-400 text-xs font-medium hover:text-red-500 transition inline-flex items-center gap-1.5"
                 >
                   <Flag className="w-3 h-3" /> Report Ad
                 </button>
               </div>
+
             </div>
           </div>
         </div>
