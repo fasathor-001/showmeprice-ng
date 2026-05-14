@@ -87,7 +87,7 @@ export default function SellerProfileSetupPage() {
           const { data, error } = await supabase
             .from("businesses")
             .select("business_name,business_type,state_id,city,address,whatsapp_number,phone_number,description")
-            .or(`owner_id.eq.${user.id},user_id.eq.${user.id}`)
+            .eq("user_id", user.id)
             .limit(1);
 
           if (error) throw error;
@@ -176,6 +176,7 @@ export default function SellerProfileSetupPage() {
       if (profileErr) throw profileErr;
 
       const payloadBase: any = {
+        user_id: authUser.id,
         business_name: safeStr(form.business_name) || null,
         business_type: safeStr(form.business_type) || null,
         state_id: form.state_id ? Number(form.state_id) : null,
@@ -187,28 +188,13 @@ export default function SellerProfileSetupPage() {
         updated_at: new Date().toISOString(),
       };
 
+      // businesses_user_id_key unique constraint exists in production.
+      // onConflict:"user_id" succeeds immediately; onConflict:"owner_id" does not (no unique constraint).
       let bizError: any = null;
       const { error: upsertErr } = await supabase
         .from("businesses")
-        .upsert(payloadBase, { onConflict: "owner_id" });
+        .upsert(payloadBase, { onConflict: "user_id" });
       bizError = upsertErr;
-
-      const msg = String(bizError?.message || "");
-      const noUniqueConflict = msg.includes("no unique") || msg.includes("ON CONFLICT");
-      if (bizError && noUniqueConflict) {
-        const { data: existing } = await supabase
-          .from("businesses")
-          .select("id")
-          .or(`owner_id.eq.${authUser.id},user_id.eq.${authUser.id}`)
-          .maybeSingle();
-        if (existing?.id) {
-          const { error: updErr } = await supabase.from("businesses").update(payloadBase).eq("id", existing.id);
-          bizError = updErr;
-        } else {
-          const { error: insErr } = await supabase.from("businesses").insert(payloadBase);
-          bizError = insErr;
-        }
-      }
 
       if (bizError) throw bizError;
 

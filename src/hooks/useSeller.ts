@@ -36,18 +36,8 @@ export function useSeller() {
         data = byUser.data;
         error = byUser.error;
 
-        if (!data && !error) {
-          // Legacy fallback: some rows use owner_id instead of user_id.
-          // TODO: run a one-time migration: UPDATE businesses SET user_id = owner_id WHERE user_id IS NULL;
-          // Then drop the owner_id column and remove this block.
-          const byOwner = await supabase
-            .from("businesses")
-            .select("*, verification_tier, verification_status")
-            .eq("owner_id", user.id)
-            .maybeSingle();
-          data = byOwner.data;
-          error = byOwner.error;
-        }
+        // Legacy owner_id fallback removed — businesses.user_id is the canonical key
+        // (businesses_user_id_key unique constraint exists in production).
 
         if (error) throw error;
 

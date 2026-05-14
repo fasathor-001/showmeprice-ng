@@ -190,19 +190,7 @@ async function attachSellerNames(rows: any[]): Promise<any[]> {
         if (uid && name) nameByOwnerId.set(uid, name);
       }
 
-      // Legacy path: some businesses rows use owner_id instead of user_id
-      const stillNeedLegacy = ownerIds.filter((id) => !nameByOwnerId.has(id));
-      if (stillNeedLegacy.length > 0) {
-        const { data: legacyRows } = await supabase
-          .from("businesses")
-          .select("owner_id, business_name")
-          .in("owner_id", stillNeedLegacy);
-        for (const row of legacyRows ?? []) {
-          const oid = String((row as any)?.owner_id ?? "");
-          const name = String(row?.business_name ?? "").trim();
-          if (oid && name) nameByOwnerId.set(oid, name);
-        }
-      }
+      // Legacy businesses.owner_id path removed — businesses.user_id is canonical.
 
       // Fall back to profiles for any owner_ids still unresolved
       const stillNeed = ownerIds.filter((id) => !nameByOwnerId.has(id));
