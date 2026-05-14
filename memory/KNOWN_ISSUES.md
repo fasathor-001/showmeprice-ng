@@ -1,6 +1,6 @@
 # KNOWN_ISSUES.md — Tracked Issues
 
-Last updated: 2026-05-11
+Last updated: 2026-05-14
 
 Check this file before touching any system with a known open issue.
 Add items when an issue is confirmed (not suspected).
@@ -286,23 +286,26 @@ fallback. After running, the fallback code and `owner_id` column can be removed.
 
 ---
 
-### #18 — EscrowSalesPage showed all sellers' orders (data isolation bug)
+### #18 — Escrow pages showed cross-user orders (data isolation bug, seller + buyer)
 Severity: CRITICAL
 Status: RESOLVED — 2026-05-14
 
-`EscrowSalesPage` queried `escrow_orders` without filtering by `seller_id`.
-RLS allows SELECT if `buyer_id = auth.uid() OR seller_id = auth.uid()`, so
-any seller could see all escrow orders they were a buyer on PLUS orders for
-other sellers they were not party to (if RLS was not applied).
+Both `EscrowSalesPage` and `EscrowOrdersPage` queried `escrow_orders` without
+filtering by the current user's role-appropriate FK column. RLS allows SELECT
+if `buyer_id = auth.uid() OR seller_id = auth.uid()`, which means a seller
+visiting the sales page could also see any orders where they happened to be
+a buyer (and vice versa). More critically, the absence of explicit page-level
+filters exposed cross-user data if RLS was misconfigured or bypassed.
 
-Resolution: Added `.eq("seller_id", currentUserId)` to the EscrowSalesPage
-query in `src/pages/EscrowSalesPage.tsx`.
+Resolution:
+- Seller side (commit 975009d): Added `.eq("seller_id", currentUserId)` to
+  `src/pages/EscrowSalesPage.tsx`.
+- Buyer side (Fix 5.5): Added `.eq("buyer_id", currentUserId)` to
+  `src/pages/EscrowOrdersPage.tsx`.
 
-RLS note: The `escrow_orders` RLS SELECT policy uses OR (buyer or seller),
-which means a seller can still see orders where they were a buyer.
-The explicit `.eq("seller_id")` filter on the sales page enforces correct
-role-specific view. The buyer page (`EscrowOrdersPage`) has the same gap —
-no `.eq("buyer_id")` filter — but was not in scope for this fix.
+Both pages now guard against a null session (return early with empty rows if
+no authenticated user). Defense in depth with RLS — explicit page-level
+filter applied even though RLS covers the baseline case.
 
 ---
 
