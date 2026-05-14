@@ -42,6 +42,7 @@ import EscrowOrdersPage from "./pages/EscrowOrdersPage";
 import EscrowSalesPage from "./pages/EscrowSalesPage";
 import AuthCallbackPage from "./pages/AuthCallbackPage";
 import SetPasswordPage from "./pages/SetPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import TermsPage from "./pages/TermsPage";
 import PrivacyPage from "./pages/PrivacyPage";
 import CookiePolicyPage from "./pages/CookiePolicyPage";
@@ -387,6 +388,7 @@ export default function App() {
     if (path === "/cookies" || path === "/cookie-policy") return <CookiePolicyPage />;
     if (path === "/auth/callback" || path === "/auth-callback") return <AuthCallbackPage />;
     if (path === "/set-password") return <SetPasswordPage />;
+    if (path === "/reset-password") return <ResetPasswordPage />;
     if (path === "/escrow" || path === "/escrow/" || path === "/account/escrow") {
       return (
         <AccountShell title="Escrow Orders">

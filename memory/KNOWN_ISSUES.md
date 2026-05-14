@@ -38,19 +38,23 @@ See CLAUDE.md Guardrails.
 
 ### #2 — Password reset redirects to a 404
 Severity: CRITICAL
-Status: OPEN
+Status: RESOLVED — 2026-05-14
 
 `useAuth.resetPassword()` sends a Supabase magic link with redirect to
 `${window.location.origin}/reset-password`. That path is not registered in
 `src/App.tsx` router. Users clicking password reset links land on a 404.
 
-Fix required: Add `/reset-password` route to `src/App.tsx` that reads the
-Supabase `type=recovery` token from the URL params and renders a new-password
-form. Also confirm the Supabase Auth redirect URL allowlist includes
-`${origin}/reset-password`.
+Resolution: Created `src/pages/ResetPasswordPage.tsx` and registered
+`/reset-password` route in `src/App.tsx`. Page listens for
+`onAuthStateChange PASSWORD_RECOVERY` event, shows a new-password form,
+calls `supabase.auth.updateUser({ password })` on submit, and redirects to
+`/` on success. If no recovery session arrives within 4 seconds (expired or
+invalid link), shows a friendly error with a "Request new link" button.
+`redirectTo` in `useAuth.resetPassword()` and `GlobalAuthModals.tsx` already
+pointed to `/reset-password` — no changes needed there.
 
-Any user who cannot log in and tries to reset their password cannot recover
-their account.
+Owner action still required: Confirm Supabase Auth dashboard → URL
+Configuration includes `${origin}/reset-password` in the redirect allow list.
 
 ---
 
