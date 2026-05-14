@@ -281,6 +281,26 @@ fallback. After running, the fallback code and `owner_id` column can be removed.
 
 ---
 
+### #18 — EscrowSalesPage showed all sellers' orders (data isolation bug)
+Severity: CRITICAL
+Status: RESOLVED — 2026-05-14
+
+`EscrowSalesPage` queried `escrow_orders` without filtering by `seller_id`.
+RLS allows SELECT if `buyer_id = auth.uid() OR seller_id = auth.uid()`, so
+any seller could see all escrow orders they were a buyer on PLUS orders for
+other sellers they were not party to (if RLS was not applied).
+
+Resolution: Added `.eq("seller_id", currentUserId)` to the EscrowSalesPage
+query in `src/pages/EscrowSalesPage.tsx`.
+
+RLS note: The `escrow_orders` RLS SELECT policy uses OR (buyer or seller),
+which means a seller can still see orders where they were a buyer.
+The explicit `.eq("seller_id")` filter on the sales page enforces correct
+role-specific view. The buyer page (`EscrowOrdersPage`) has the same gap —
+no `.eq("buyer_id")` filter — but was not in scope for this fix.
+
+---
+
 ### #17 — 6 pre-existing TypeScript errors in tsc --noEmit
 Severity: LOW
 Status: OPEN — pre-existing, do not file as new failures

@@ -34,11 +34,19 @@ export default function EscrowSalesPage() {
     setLoading(true);
     setError(null);
     try {
+      const { data: sessData } = await supabase.auth.getSession();
+      const currentUserId = sessData?.session?.user?.id;
+      if (!currentUserId) {
+        setRows([]);
+        return;
+      }
+
       const { data, error: qErr } = await supabase
         .from("escrow_orders")
         .select(
           "id,status,delivery_status,dispute_status,subtotal_kobo,escrow_fee_kobo,total_kobo,settlement_status,released_at,refunded_at,created_at"
         )
+        .eq("seller_id", currentUserId)
         .order("created_at", { ascending: false });
       if (qErr) throw qErr;
       setRows((data ?? []) as EscrowOrder[]);
