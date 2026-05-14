@@ -28,6 +28,7 @@ import AdminDashboard from "./pages/AdminDashboard";
 import AdminFeaturesPage from "./pages/AdminFeaturesPage";
 import AdminApprovalsPage from "./pages/admin/AdminApprovalsPage";
 import AdminEscrowPage from "./pages/admin/AdminEscrowPage";
+import AdminViolationsPage from "./pages/admin/AdminViolationsPage";
 import DealsPage from "./pages/DealsPage";
 import DeliveryPage from "./pages/DeliveryPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
@@ -37,6 +38,13 @@ import SellerProfileSetupPage from "./pages/SellerProfileSetupPage";
 import VerificationPage from "./pages/account/VerificationPage";
 import EscrowReturnPage from "./pages/EscrowReturnPage";
 import EscrowStatusPage from "./pages/EscrowStatusPage";
+import EscrowOrdersPage from "./pages/EscrowOrdersPage";
+import EscrowSalesPage from "./pages/EscrowSalesPage";
+import AuthCallbackPage from "./pages/AuthCallbackPage";
+import SetPasswordPage from "./pages/SetPasswordPage";
+import TermsPage from "./pages/TermsPage";
+import PrivacyPage from "./pages/PrivacyPage";
+import CookiePolicyPage from "./pages/CookiePolicyPage";
 
 type HomeMode = "home" | "marketplace" | "product";
 type InboxInit = { chatId?: string; userId?: string; productId?: string } | null;
@@ -374,6 +382,25 @@ export default function App() {
     }
 
     if (path === "/help" || path === "/help/") return <HelpPage />;
+    if (path === "/terms" || path === "/terms-of-service") return <TermsPage />;
+    if (path === "/privacy" || path === "/privacy-policy") return <PrivacyPage />;
+    if (path === "/cookies" || path === "/cookie-policy") return <CookiePolicyPage />;
+    if (path === "/auth/callback" || path === "/auth-callback") return <AuthCallbackPage />;
+    if (path === "/set-password") return <SetPasswordPage />;
+    if (path === "/escrow" || path === "/escrow/" || path === "/account/escrow") {
+      return (
+        <AccountShell title="Escrow Orders">
+          <EscrowOrdersPage />
+        </AccountShell>
+      );
+    }
+    if (path === "/account/seller/escrow") {
+      return (
+        <AccountShell title="Escrow Sales">
+          <EscrowSalesPage />
+        </AccountShell>
+      );
+    }
     if (path === "/escrow/callback" || path === "/escrow/return" || path === "/escrow/success")
       return <EscrowReturnPage />;
     if (path === "/escrow/status") return <EscrowStatusPage />;
@@ -438,7 +465,7 @@ export default function App() {
       );
     }
 
-    if (path === "/admin/features") {
+    if (path === "/admin/features" || path === "/admin/feature-flags") {
       return (
         <AccountShell title="Admin Features">
           <AdminFeaturesPage />
@@ -450,6 +477,14 @@ export default function App() {
       return (
         <AccountShell title="Admin Approvals">
           <AdminApprovalsPage />
+        </AccountShell>
+      );
+    }
+
+    if (path === "/admin/violations") {
+      return (
+        <AccountShell title="Admin Violations">
+          <AdminViolationsPage />
         </AccountShell>
       );
     }
