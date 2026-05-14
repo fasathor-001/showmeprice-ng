@@ -13,7 +13,7 @@ interface SEOProps {
 
 export default function SEO({ 
   title = "ShowMePrice.ng | Nigeria's Verified Marketplace", 
-  description = "Find real prices from verified Nigerian sellers. No more 'DM for price'. Connect directly via whatsapp_number or Phone.", 
+  description = "Nigeria's verified marketplace for real prices. Browse products from trusted sellers and contact them directly via WhatsApp or phone — no more \"DM for price\".",
   image = "/logo.png", 
   url,
   type = "website",
@@ -29,7 +29,7 @@ export default function SEO({
       <title>{siteTitle}</title>
       <meta name="description" content={description} />
       
-      {/* Open Graph / Facebook / whatsapp_number */}
+      {/* Open Graph / Facebook */}
       <meta property="og:type" content={type} />
       <meta property="og:title" content={siteTitle} />
       <meta property="og:description" content={description} />
