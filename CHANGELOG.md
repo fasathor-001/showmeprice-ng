@@ -4,6 +4,28 @@ Most recent entry first.
 
 ---
 
+## 2026-05-14 — Phase 2.1: Header widget and dropdown role reads (1 fix, 1 commit)
+
+Targeted follow-up to Phase 2 Fix 2 (f7fec81). Live verification found two
+spots that still showed stale role for sellers.
+
+Fix: Phase 2.1 — header role badge and "Become a Seller" dropdown visibility
+  - Header widget (desktop): getAccountStatus was passed profileLoaded=false
+    during the initial cache-warm render because profileLoading=true. This
+    caused getEffectiveUserType to fall back to getRoleHint, which returned
+    the stale smp:role_hint ('buyer') set before the user upgraded. Fixed by
+    computing profileLoadedForRole = signedIn && (profile != null || !loading),
+    so cached profile data is treated as loaded and profile.user_type is used.
+  - Desktop dropdown "Become a Seller": missing accountStatus.ready guard meant
+    the item rendered while role was still resolving (isSeller=false). Added
+    accountStatus.ready && prefix to match the mobile menu which already had
+    the equivalent profileReady guard.
+  (src/components/layout/Navbar.tsx)
+
+Commit: ad6c609
+
+---
+
 ## 2026-05-14 — Phase 1: Launch-Ready Core Flows (5 fixes, 5 commits)
 
 Five production-blocking issues resolved. No new dependencies introduced.
