@@ -61,8 +61,10 @@ export function getEffectiveUserType(opts: {
   }
   if (isAdminRole || normalizeRole(profile?.role) === "admin") return "admin";
 
+  // Use ONLY user_type for buyer/seller detection.
+  // hasBusiness was a workaround for corrupted data; user_type is the canonical truth.
   const profileType = normalizeRole(profile?.user_type);
-  if (profileType === "seller" || hasBusiness) return "seller";
+  if (profileType === "seller") return "seller";
 
   return "buyer";
 }

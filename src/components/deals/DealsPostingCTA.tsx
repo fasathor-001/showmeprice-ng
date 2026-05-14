@@ -11,8 +11,7 @@ export default function DealsPostingCTA() {
 
   const isSeller =
     (user?.user_metadata as Record<string, unknown> | null)?.user_type === "seller" ||
-    (profile as Record<string, unknown> | null)?.user_type === "seller" ||
-    (profile as Record<string, unknown> | null)?.role === "seller";
+    (profile as Record<string, unknown> | null)?.user_type === "seller";
 
   const dealsLive = !loading && !!isEnabled?.("deals_enabled");
   const dealsPostingOpen = !loading && !!isEnabled?.("deals_posting_enabled");

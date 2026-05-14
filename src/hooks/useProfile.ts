@@ -155,23 +155,28 @@ export function useProfile() {
           business_name: metaBusinessName.trim() || null,
         } as any;
 
+        // INSERT only — never overwrite user_type after initial insert.
+        // user_type is set by the seller setup flow and must not be corrupted back to 'buyer'
+        // on a subsequent refresh. ignoreDuplicates:true means: if the row already exists,
+        // do nothing (the profile select above would have returned it under normal conditions).
         try {
-          const { error: upErr } = await supabase.from("profiles").upsert(baseProfile, { onConflict: "id" });
-          if (upErr) throw upErr;
+          const { error: upErr } = await supabase
+            .from("profiles")
+            .insert(baseProfile);
+          if (upErr && !String(upErr.message).includes("duplicate") && !String(upErr.code).includes("23505")) {
+            throw upErr;
+          }
         } catch {
-          // Fallback: insert minimal safe profile (in case email/full_name columns are missing)
+          // Fallback: attempt minimal insert in case full_name/address columns are absent
           try {
-            await supabase.from("profiles").upsert(
-              {
-                id: userId,
-                user_type: metaType || "buyer",
-                role: metaRole || null,
-                display_name: cleanName || null,
-              },
-              { onConflict: "id" }
-            );
+            await supabase.from("profiles").insert({
+              id: userId,
+              user_type: metaType || "buyer",
+              role: metaRole || null,
+              display_name: cleanName || null,
+            });
           } catch {
-            // intentionally empty
+            // intentionally empty — row may already exist (RLS race); existing row wins
           }
         }
 
