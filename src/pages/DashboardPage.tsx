@@ -197,7 +197,6 @@ export default function DashboardPage() {
     const verification =
       (tierRaw === "verified" ? "verified" : "") ||
       safeStr(b?.verification_status) ||
-      safeStr((profile as any)?.seller_verification_status) ||
       "unverified";
     const verificationTone =
       verification === "verified"

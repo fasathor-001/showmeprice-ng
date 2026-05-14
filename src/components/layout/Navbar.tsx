@@ -379,11 +379,7 @@ export default function Navbar() {
     : "";
   const isVerifiedByTier = verificationTier === "verified" || verificationTier === "premium";
   let verificationRaw = profileReady
-    ? String(
-        (profile as any)?.seller_verification_status ||
-          (business as any)?.verification_status ||
-          ""
-      )
+    ? String((business as any)?.verification_status || "")
         .trim()
         .toLowerCase()
     : "";

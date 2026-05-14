@@ -221,22 +221,9 @@ export function useProfile() {
 
       if (reqId !== requestIdRef.current) return;
 
-      let verificationStatus: string | null = null;
-      try {
-        const { data: vRow, error: vErr } = await supabase
-          .from("seller_verifications")
-          .select("status")
-          .eq("seller_id", userId)
-          .maybeSingle();
-        if (!vErr && vRow?.status) verificationStatus = String(vRow.status);
-      } catch {
-        // intentionally empty
-      }
-
-      const mergedProfile = {
-        ...(resolvedProfile as any),
-        seller_verification_status: verificationStatus,
-      };
+      // Verification status lives on businesses.verification_status — read it from bizRow directly.
+      // profiles.seller_verification_status does not exist in production; do not read or write it.
+      const mergedProfile = { ...(resolvedProfile as any) };
       const mergedBusiness = (bizRow as any) as Business | null;
 
       setState({

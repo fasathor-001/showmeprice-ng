@@ -22,7 +22,7 @@ export default function VerificationPage() {
 
   const userType = String((profile as any)?.user_type ?? "").toLowerCase();
   const isSeller = user && userType === "seller";
-  const status = String((profile as any)?.seller_verification_status ?? "unverified").toLowerCase();
+  const status = String((business as any)?.verification_status ?? "unverified").toLowerCase();
 
   const [idType, setIdType] = useState("");
   const [idNumber, setIdNumber] = useState("");

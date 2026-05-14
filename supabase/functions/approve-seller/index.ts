@@ -101,11 +101,8 @@ serve(async (req) => {
     .update({ verification_status: "approved", verification_tier: "verified", updated_at: now })
     .eq("user_id", sellerId);
 
-  // Update profile seller_verification_status for UI
-  await supabaseAdmin
-    .from("profiles")
-    .update({ seller_verification_status: "verified", updated_at: now })
-    .eq("id", sellerId);
+  // Note: profiles.seller_verification_status does not exist in production.
+  // Verification status is read from businesses.verification_status (updated above).
 
   // Get seller's email and name for the notification
   const { data: sellerUser } = await supabaseAdmin.auth.admin.getUserById(sellerId);
