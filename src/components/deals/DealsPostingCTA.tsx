@@ -1,4 +1,4 @@
-﻿import React, { useMemo } from "react";
+﻿import React from "react";
 import { useAuth } from "../../hooks/useAuth";
 import { useProfile } from "../../hooks/useProfile";
 import { useFeatureFlags } from "../../contexts/FeatureFlagsContext";
@@ -7,7 +7,7 @@ export default function DealsPostingCTA() {
   const { user } = useAuth();
   const { profile } = useProfile();
 
-  const { isEnabled, loading, getFlag } = useFeatureFlags();
+  const { isEnabled, loading } = useFeatureFlags();
 
   const isSeller =
     (user?.user_metadata as Record<string, unknown> | null)?.user_type === "seller" ||
@@ -16,10 +16,6 @@ export default function DealsPostingCTA() {
 
   const dealsLive = !loading && !!isEnabled?.("deals_enabled");
   const dealsPostingOpen = !loading && !!isEnabled?.("deals_posting_enabled");
-
-  const seasonLabel = useMemo(() => {
-    return (getFlag?.("deals_posting_enabled")?.description || "").trim();
-  }, [getFlag]);
 
   if (!user || !isSeller) return null;
   if (!dealsLive || !dealsPostingOpen) return null;
@@ -51,10 +47,10 @@ export default function DealsPostingCTA() {
     <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
         <div className="font-black text-emerald-900">
-          Seasonal Deals Posting is OPEN{seasonLabel ? ` - ${seasonLabel}` : ""} 
+          Deal Season is Live 🎉
         </div>
         <div className="text-emerald-800 text-sm mt-1">
-          Post your deal product now. Buyers will see it on the Deals page during the active season.
+          Create a discounted listing and reach more buyers during this Deal Season.
         </div>
       </div>
 

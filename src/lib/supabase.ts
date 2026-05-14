@@ -26,10 +26,25 @@ supabaseUrl = supabaseUrl.trim().replace(/\/+$/, "");
 supabaseAnonKey = supabaseAnonKey.trim();
 
 if (import.meta.env.DEV) {
-  const keySuffix = supabaseAnonKey.length >= 6 ? supabaseAnonKey.slice(-6) : supabaseAnonKey;
+  const keyPrefix = supabaseAnonKey.length >= 8 ? supabaseAnonKey.slice(0, 8) : supabaseAnonKey;
   console.log("Supabase URL:", supabaseUrl);
-  console.log("Supabase Anon Key Length:", supabaseAnonKey.length);
-  console.log("Supabase Anon Key Suffix:", keySuffix);
+  console.log("Supabase Anon Key Prefix:", keyPrefix);
+
+  const expectedHost = "kdpyndeizfgbchnrduzm.supabase.co";
+  if (!supabaseUrl.includes(expectedHost)) {
+    console.error("Supabase env mismatch (wrong project)", { supabaseUrl, expectedHost });
+    if (typeof window !== "undefined") {
+      const g = window as any;
+      if (!g.__SMP_SUPABASE_ENV_MISMATCH__) {
+        g.__SMP_SUPABASE_ENV_MISMATCH__ = true;
+        window.dispatchEvent(
+          new CustomEvent("smp:toast", {
+            detail: { type: "error", message: "Supabase env mismatch (wrong project)" },
+          }),
+        );
+      }
+    }
+  }
 }
 
 export const SUPABASE_URL = supabaseUrl;

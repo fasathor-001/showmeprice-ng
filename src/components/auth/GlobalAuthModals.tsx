@@ -179,7 +179,7 @@ export default function GlobalAuthModals() {
       const user = userData.user;
       const { data: existing, error: fetchErr } = await supabase
         .from("profiles")
-        .select("id, full_name, display_name, first_name, last_name")
+        .select("id, full_name, display_name")
         .eq("id", user.id)
         .maybeSingle();
 

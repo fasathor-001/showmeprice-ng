@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { getAuthSession } from "../lib/authSession";
+import { invokeAuthedFunction } from "../lib/invokeAuthedFunction";
 import { ViolationLog } from "../types";
 
 type AdminStats = {
@@ -145,33 +146,15 @@ export function useAdmin(enabled = true) {
   const approveSeller = useCallback(
     async (verificationId: string) => {
       if (!enabled) return;
-      const adminId = getAuthSession()?.user?.id ?? null;
-      const { data: vRow } = await supabase
-        .from("seller_verifications")
-        .select("id, seller_id")
-        .eq("id", verificationId)
-        .maybeSingle();
-
-      await supabase
-        .from("seller_verifications")
-        .update({
-          status: "verified",
-          reviewed_at: new Date().toISOString(),
-          reviewed_by: adminId,
-        })
-        .eq("id", verificationId);
-
-      if (vRow?.seller_id) {
-        await supabase
-          .from("businesses")
-          .update({
-            verification_status: "approved",
-            verification_tier: "verified",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", vRow.seller_id);
+      // Calls approve-seller Edge Function which: updates verification + business,
+      // updates profile status, AND sends the seller_approved email via notify.
+      const { error } = await invokeAuthedFunction("approve-seller", {
+        body: { verification_id: verificationId },
+      });
+      if (error) {
+        console.error("approveSeller failed:", error);
+        throw error;
       }
-
       fetchDashboardData();
     },
     [enabled, fetchDashboardData]

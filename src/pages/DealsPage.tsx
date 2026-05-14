@@ -172,9 +172,9 @@ export default function DealsPage() {
                 <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand/10 text-brand font-black text-xs tracking-widest">
                   SELLER  DEAL SEASON
                 </div>
-                <h1 className="text-2xl md:text-3xl font-black text-slate-900 mt-3">{seasonLabel}</h1>
+                <h1 className="text-2xl md:text-3xl font-black text-slate-900 mt-3">Deal Season is Live 🎉</h1>
                 <p className="text-slate-600 mt-2">
-                  Buyers will see deals when the admin opens a Deal Season. Use the section below to post your deal.
+                  Create discounted listings and reach more buyers during this Deal Season.
                 </p>
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -200,14 +200,14 @@ export default function DealsPage() {
             <div id="post-deal" className="mt-8 border border-slate-200 rounded-2xl p-5 md:p-6 bg-slate-50">
               <div className="flex items-start gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center">
-                  <Info className="w-5 h-5 text-slate-700" />
+                  <BadgePercent className="w-5 h-5 text-slate-700" />
                 </div>
                 <div className="flex-1">
-                  <div className="text-lg font-black text-slate-900">Post Deal</div>
+                  <div className="text-lg font-black text-slate-900">Post a Deal</div>
                   <div className="text-sm text-slate-600 mt-1">
                     {dealsPostingOn
-                      ? "Deal Season is live. Post your discounted listing so buyers can find it on the Deals page."
-                      : "Deal Season is currently closed. When admin opens it, you can post deals here."}
+                      ? "Create a discounted listing so buyers can find it on the Deals page."
+                      : "Deal Season is currently closed. When it opens, you can post your deals here."}
                   </div>
 
                   <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -215,7 +215,6 @@ export default function DealsPage() {
                       type="button"
                       disabled={!dealsPostingOn}
                       onClick={() => {
-                        // Optional: let your PostProductForm read this later if you want "deal mode"
                         try { sessionStorage.setItem("smp_post_mode", "deal"); } catch { // intentionally empty
                         }
                         (window as any).openPostItemModal?.();
@@ -228,18 +227,10 @@ export default function DealsPage() {
 
                     <button
                       type="button"
-                      onClick={() => navigateToPath("/dashboard")}
-                      className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 font-black text-sm hover:bg-slate-50"
-                    >
-                      Go to Overview
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => navigateToPath("/my-shop")}
                       className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-800 font-black text-sm hover:bg-slate-50"
                     >
-                      Seller Dashboard
+                      View My Listings
                     </button>
                   </div>
                 </div>
@@ -268,11 +259,10 @@ export default function DealsPage() {
                 SHOWMEPRICE.NG DEALS
               </div>
 
-              {/*  KEEP showing the deal season title */}
-              <h1 className="text-2xl md:text-4xl font-black text-slate-900 mt-3">{seasonLabel}</h1>
+              <h1 className="text-2xl md:text-4xl font-black text-slate-900 mt-3">ShowMePrice Deals</h1>
 
               <p className="text-slate-600 mt-2">
-                Limited-time discounts from sellers during Deal Seasons. Only deal listings show here.
+                Limited-time offers from trusted sellers. Browse discounted listings during active Deal Seasons.
               </p>
 
               <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -284,7 +274,7 @@ export default function DealsPage() {
                   }`}
                 >
                   <span className={`w-2 h-2 rounded-full ${dealsPostingOn ? "bg-emerald-500" : "bg-slate-400"}`} />
-                  {dealsPostingOn ? "Season Live" : "Season Closed"}
+                  {dealsPostingOn ? "Season Open" : "Season Closed"}
                 </span>
               </div>
             </div>
@@ -317,19 +307,30 @@ export default function DealsPage() {
                 <Info className="w-6 h-6 text-slate-600" />
               </div>
               <div className="text-xl font-black text-slate-900">Deal Season is Closed</div>
-              <div className="text-slate-600 mt-1">Please check back when the next Deal Season starts.</div>
+              <div className="text-slate-600 mt-1 max-w-sm mx-auto">Please check back when the next Deal Season starts.</div>
             </div>
+          ) : fetching && !deals?.length ? (
+            <div className="py-12 text-center text-slate-500 text-sm font-semibold">Loading deals…</div>
           ) : error ? (
             <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-red-700 font-semibold">
-              {String(error?.message ?? error)}
+              {String(error)}
             </div>
           ) : deals?.length ? (
             <>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 {deals.map((p: any) => {
                   const img = Array.isArray(p.images) ? p.images[0] : p.images;
-                  const bizName = (p.businesses?.business_name || p.business_name || "").toString().trim();
-                  const catName = (p.subcategories?.name || p.category_name || "").toString().trim();
+                  const bizName = (
+                    String(p?.seller_business_name ?? "").trim() ||
+                    String(p?.business_name ?? "").trim() ||
+                    String(p?.businesses?.business_name ?? "").trim() ||
+                    String(p?.businesses?.name ?? "").trim() ||
+                    String(p?.seller_display_name ?? "").trim() ||
+                    String(p?.seller_name ?? "").trim() ||
+                    String(p?.profiles?.full_name ?? "").trim() ||
+                    "Seller"
+                  );
+                  const catName = (p.subcategories?.name || p.categories?.name || p.category_name || "").toString().trim();
                   const stateName = (p.states?.name || p.state || "").toString().trim();
 
                   return (
@@ -338,7 +339,7 @@ export default function DealsPage() {
                       onClick={() => openDealProduct(String(p.id))}
                       className="text-left bg-white border border-slate-200 rounded-2xl overflow-hidden hover:shadow-md transition"
                     >
-                      <div className="relative h-36 bg-slate-100 overflow-hidden">
+                      <div className="relative aspect-[4/3] bg-slate-100 overflow-hidden">
                         {img ? (
                           <img src={img} alt={p.title || "Deal"} className="w-full h-full object-cover" />
                         ) : (
@@ -354,18 +355,18 @@ export default function DealsPage() {
 
                         {/* season pill */}
                         <span className="absolute top-2 right-2 text-[10px] font-black px-2 py-1 rounded-full bg-white/90 text-slate-700 border border-slate-200">
-                          {(p.deal_season || seasonLabel || "Deals").toString()}
+                          {(p.deal_season || "Deals").toString()}
                         </span>
                       </div>
 
                       <div className="p-3">
                         <div className="text-slate-900 font-black text-sm line-clamp-2">{p.title || "Deal Product"}</div>
 
-                        <div className="text-xs text-slate-500 mt-1">
-                          {catName ? `${catName}  ` : ""}
-                          {bizName}
-                          {stateName ? `  ${stateName}` : ""}
-                        </div>
+                        {catName ? (
+                          <div className="text-[11px] font-bold text-brand uppercase tracking-wide mt-1 truncate">{catName}</div>
+                        ) : null}
+                        <div className="text-xs text-slate-500 mt-0.5 truncate">{bizName}</div>
+                        {stateName ? <div className="text-xs text-slate-400 truncate">{stateName}</div> : null}
 
                         <div className="mt-2 flex items-center justify-between">
                           <div className="text-slate-900 font-black text-sm">{formatPrice(p.price)}</div>
@@ -393,8 +394,8 @@ export default function DealsPage() {
             </>
           ) : (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-8 text-center">
-              <div className="text-xl font-black text-slate-900">No deals found</div>
-              <div className="text-slate-600 mt-1">When sellers post deals, they will appear here.</div>
+              <div className="text-xl font-black text-slate-900">No deals yet</div>
+              <div className="text-slate-600 mt-1">Sellers can now post deals for this season.</div>
             </div>
           )}
         </div>

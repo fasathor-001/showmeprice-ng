@@ -97,7 +97,15 @@ export function useFeatureFlagAdmin() {
           note: note ?? null,
         });
 
-      if (auditErr) throw auditErr;
+      if (auditErr) {
+        const msg = String(auditErr?.message ?? auditErr);
+        if (msg.includes("flag_key") && msg.includes("does not exist")) {
+          throw new Error(
+            "Audit log failed: flag_key column missing. Run: ALTER TABLE feature_flag_audit ADD COLUMN IF NOT EXISTS flag_key TEXT REFERENCES feature_flags(key) ON DELETE CASCADE;"
+          );
+        }
+        throw auditErr;
+      }
 
       await loadAudit();
     },

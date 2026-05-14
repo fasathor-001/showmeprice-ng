@@ -367,13 +367,7 @@ export default function Navbar() {
 
   const email = String(authUser?.email ?? "").trim();
   const emailName = email.includes("@") ? email.split("@")[0] : email;
-  const profileName =
-    (profile as any)?.full_name ||
-    (profile as any)?.display_name ||
-    [String((profile as any)?.first_name || "").trim(), String((profile as any)?.last_name || "").trim()]
-      .filter(Boolean)
-      .join(" ")
-      .trim();
+    const profileName = (profile as any)?.full_name || (profile as any)?.display_name || "";
   const businessName = String((business as any)?.business_name || (business as any)?.shop_name || (business as any)?.name || "").trim();
   const metaName = String((authUser as any)?.user_metadata?.full_name || "").trim();
   const emailFallbackName = emailName ? `${emailName.slice(0, 1).toUpperCase()}${emailName.slice(1)}` : "";

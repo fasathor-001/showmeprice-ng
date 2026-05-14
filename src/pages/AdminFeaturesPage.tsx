@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useProfile } from "../hooks/useProfile";
+import { useFeatureFlagAdmin } from "../hooks/useFeatureFlagAdmin";
 
 type FeatureFlagRow = {
   key: string;
@@ -43,10 +44,18 @@ function formatWhen(ts: string) {
 }
 
 export default function AdminFeaturesPage() {
-  
-const { profile, loading: profileLoading } = useProfile();
+  const { profile, loading: profileLoading } = useProfile();
   const role = (profile as any)?.role ?? "user";
   const isAdmin = !profileLoading && role === "admin";
+
+  // Hook handles audit loading, saving with audit log, and deleting audit rows
+  const {
+    audit: auditRows,
+    auditLoading,
+    auditError,
+    loadAudit,
+    saveFlag: hookSaveFlag,
+  } = useFeatureFlagAdmin();
 
   const [tab, setTab] = useState<"flags" | "audit">("flags");
 
@@ -64,10 +73,11 @@ const { profile, loading: profileLoading } = useProfile();
   const [flagQuery, setFlagQuery] = useState("");
   const [visibilityFilter, setVisibilityFilter] = useState<"any" | NonNullable<FeatureFlagRow["visible_to"]>>("any");
 
-  // --- Audit Log ---
-  const [audits, setAudits] = useState<AuditRow[]>([]);
-  const [auditLoading, setAuditLoading] = useState(false);
-  const [auditError, setAuditError] = useState<string | null>(null);
+  // --- Audit Log (from hook) ---
+  const audits: AuditRow[] = useMemo(
+    () => (Array.isArray(auditRows) ? (auditRows as unknown as AuditRow[]) : []),
+    [auditRows]
+  );
 
   const [selectedAuditIds, setSelectedAuditIds] = useState<string[]>([]);
   const [deletingAudits, setDeletingAudits] = useState(false);
@@ -149,24 +159,24 @@ const { profile, loading: profileLoading } = useProfile();
     }
   };
 
-  // Save ONLY changed fields (prevents accidental wiping)
+  // Save via hook → writes feature_flags AND inserts audit log row
   const saveFlag = async (row: FeatureFlagRow) => {
     if (!isAdmin) return;
 
     const d = draft[row.key];
     if (!d || Object.keys(d).length === 0) return;
 
-    const payload: Partial<FeatureFlagRow> = {};
-    if (typeof d.enabled === "boolean") payload.enabled = d.enabled;
-    if (typeof d.description === "string") payload.description = d.description;
-    if (d.visible_to) payload.visible_to = d.visible_to;
-
+    const eff = effective(row);
     setSavingKey(row.key);
     setFlagsError(null);
 
     try {
-      const { error } = await supabase.from("feature_flags").update(payload).eq("key", row.key);
-      if (error) throw error;
+      await hookSaveFlag({
+        key: row.key,
+        enabled: eff.enabled,
+        description: eff.description,
+        visible_to: eff.visible_to,
+      });
 
       setDraft((prev) => {
         const copy = { ...prev };
@@ -175,7 +185,6 @@ const { profile, loading: profileLoading } = useProfile();
       });
 
       await refreshFlags();
-      await refreshAudits();
     } catch (e: any) {
       console.error("Save flag failed:", e);
       setFlagsError(`Save failed: ${e?.message ?? e}`);
@@ -196,7 +205,6 @@ const { profile, loading: profileLoading } = useProfile();
     setFlagsError(null);
 
     try {
-      // Save sequentially for clarity + easier debugging
       for (const key of keys) {
         const row = flags.find((f) => f.key === key);
         if (!row) continue;
@@ -204,15 +212,14 @@ const { profile, loading: profileLoading } = useProfile();
         const d = draft[key];
         if (!d || Object.keys(d).length === 0) continue;
 
-        const payload: Partial<FeatureFlagRow> = {};
-        if (typeof d.enabled === "boolean") payload.enabled = d.enabled;
-        if (typeof d.description === "string") payload.description = d.description;
-        if (d.visible_to) payload.visible_to = d.visible_to;
+        const eff = effective(row);
+        await hookSaveFlag({
+          key,
+          enabled: eff.enabled,
+          description: eff.description,
+          visible_to: eff.visible_to,
+        });
 
-        const { error } = await supabase.from("feature_flags").update(payload).eq("key", key);
-        if (error) throw error;
-
-        // clear draft as we go
         setDraft((prev) => {
           const copy = { ...prev };
           delete copy[key];
@@ -221,7 +228,6 @@ const { profile, loading: profileLoading } = useProfile();
       }
 
       await refreshFlags();
-      await refreshAudits();
     } catch (e: any) {
       console.error("Save all failed:", e);
       setFlagsError(`Save all failed: ${e?.message ?? e}`);
@@ -230,42 +236,10 @@ const { profile, loading: profileLoading } = useProfile();
     }
   };
 
-  // -----------------------
-  // Fetch Audits
-  // -----------------------
+  // refreshAudits delegates to the hook so audit state stays in sync
   const refreshAudits = async () => {
     if (!isAdmin) return;
-    setAuditLoading(true);
-    setAuditError(null);
-
-    try {
-      const { data, error } = await supabase
-        .from(AUDIT_TABLE)
-        .select("id, flag_key, changed_by, from_enabled, to_enabled, note, created_at")
-        .order("created_at", { ascending: false })
-        .limit(20);
-
-      if (error) throw error;
-
-      if (!Array.isArray(data)) {
-        setAudits([]);
-        setAuditError("Unexpected response for audit table (not an array). Check RLS/policies.");
-        return;
-      }
-
-      const rows = data as AuditRow[];
-      setAudits(rows);
-
-      // Keep only selections that are still visible
-      const rowSet = new Set(rows.map((r) => r.id));
-      setSelectedAuditIds((prev) => prev.filter((id) => rowSet.has(id)));
-    } catch (e: any) {
-      console.error("Fetch audits failed:", e);
-      setAudits([]);
-      setAuditError(e?.message ?? String(e));
-    } finally {
-      setAuditLoading(false);
-    }
+    await loadAudit();
   };
 
   const deleteAuditsByIds = async (ids: string[]) => {
@@ -276,17 +250,17 @@ const { profile, loading: profileLoading } = useProfile();
     if (!ok) return;
 
     setDeletingAudits(true);
-    setAuditError(null);
 
     try {
       const { error } = await supabase.from(AUDIT_TABLE).delete().in("id", ids);
       if (error) throw error;
 
       setSelectedAuditIds((prev) => prev.filter((x) => !ids.includes(x)));
-      await refreshAudits(); // updates last-5 under flags automatically
+      await loadAudit();
     } catch (e: any) {
       console.error("Delete audits failed:", e);
-      setAuditError(`Delete failed: ${e?.message ?? e}`);
+      // auditError is managed by the hook; surface delete-specific error in flagsError
+      setFlagsError(`Delete audit failed: ${e?.message ?? e}`);
     } finally {
       setDeletingAudits(false);
     }
@@ -319,11 +293,10 @@ const { profile, loading: profileLoading } = useProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flags, flagQuery, visibilityFilter, draft]);
 
-  // On entry load both
+  // On entry: load flags (audit loads via hook automatically)
   useEffect(() => {
     if (!isAdmin) return;
     refreshFlags();
-    refreshAudits();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 

@@ -16,6 +16,7 @@ import {
   Wrench,
   Tag,
   Search,
+  BadgeCheck,
 } from "lucide-react";
 import { useHubs } from "../hooks/useCategories";
 import { useRecentProducts } from "../hooks/useProducts";
@@ -123,14 +124,17 @@ function verificationLabelFor(product: ProductWithRelations) {
   return "";
 }
 
-function businessNameFor(product: ProductWithRelations) {
-  const b = (product as any)?.businesses ?? {};
-  const raw =
-    String((product as any)?.seller_business_name ?? "").trim() ||
-    String(b.business_name ?? "").trim() ||
-    String(b.name ?? "").trim() ||
-    String((product as any)?.business_name ?? "").trim();
-  return raw || "Seller";
+function businessNameFor(product: any): string {
+  return (
+    String(product?.seller_business_name ?? "").trim() ||
+    String(product?.business_name ?? "").trim() ||
+    String(product?.businesses?.business_name ?? "").trim() ||
+    String(product?.businesses?.name ?? "").trim() ||
+    String(product?.seller_display_name ?? "").trim() ||
+    String(product?.seller_name ?? "").trim() ||
+    String(product?.profiles?.full_name ?? "").trim() ||
+    "Seller"
+  );
 }
 
 export default function MarketplacePage() {
@@ -311,8 +315,13 @@ export default function MarketplacePage() {
                     </div>
                     <div className="text-sm font-black text-brand mt-1">{formatMoney((product as any).price)}</div>
                     <div className="text-xs text-slate-500 mt-1">{location}</div>
-                    <div className="text-xs text-slate-500 mt-1">{sellerName}</div>
-                    <div className="text-xs text-slate-500 mt-1">{verificationLabel}</div>
+                    <div className="text-xs text-slate-500 mt-1 truncate">{sellerName}</div>
+                    {verificationLabel === "Verified" ? (
+                      <div className="flex items-center gap-0.5 mt-0.5">
+                        <BadgeCheck className="w-3 h-3 text-brand flex-shrink-0" />
+                        <span className="text-[10px] font-bold text-brand">Verified</span>
+                      </div>
+                    ) : null}
                   </div>
                 </button>
               );
@@ -386,8 +395,13 @@ export default function MarketplacePage() {
                     </div>
                     <div className="text-sm font-black text-brand mt-1">{formatMoney((product as any).price)}</div>
                     <div className="text-xs text-slate-500 mt-1">{location}</div>
-                    <div className="text-xs text-slate-500 mt-1">{sellerName}</div>
-                    <div className="text-xs text-slate-500 mt-1">{verificationLabel}</div>
+                    <div className="text-xs text-slate-500 mt-1 truncate">{sellerName}</div>
+                    {verificationLabel === "Verified" ? (
+                      <div className="flex items-center gap-0.5 mt-0.5">
+                        <BadgeCheck className="w-3 h-3 text-brand flex-shrink-0" />
+                        <span className="text-[10px] font-bold text-brand">Verified</span>
+                      </div>
+                    ) : null}
                   </div>
                 </button>
               );

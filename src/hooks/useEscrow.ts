@@ -225,9 +225,9 @@ export function useEscrow() {
           throw new Error("Invalid status for shipment");
         }
 
-        // Seller marks shipment; RLS enforces seller ownership.
+        // Single atomic update: set final status + all shipment fields together.
         const updates: Record<string, any> = {
-          status: "shipped",
+          status: "awaiting_buyer_confirmation",
           shipped_at: new Date().toISOString(),
         };
         if (shipmentReference !== undefined) {
@@ -241,17 +241,7 @@ export function useEscrow() {
           .select("*")
           .limit(1);
         if (updateErr) throw updateErr;
-        const row = (data?.[0] ?? null) as EscrowTransaction | null;
-        if (!row) throw new Error("Escrow update failed");
-
-        const { data: updatedRows, error: followErr } = await supabase
-          .from("escrow_transactions")
-          .update({ status: "awaiting_buyer_confirmation" })
-          .eq("id", escrowId)
-          .select("*")
-          .limit(1);
-        if (followErr) throw followErr;
-        const updated = (updatedRows?.[0] ?? null) as EscrowTransaction | null;
+        const updated = (data?.[0] ?? null) as EscrowTransaction | null;
         if (!updated) throw new Error("Escrow update failed");
         return updated;
       } catch (e: any) {
@@ -288,30 +278,20 @@ export function useEscrow() {
           throw new Error("Invalid status for confirmation");
         }
 
-        // Buyer confirms receipt; RLS enforces buyer ownership.
+        // Single atomic update: set final status + confirmation timestamp together.
         const now = new Date().toISOString();
 
         const { data, error: updateErr } = await supabase
           .from("escrow_transactions")
           .update({
-            status: "buyer_confirmed",
+            status: "pending_admin_release",
             buyer_confirmed_at: now,
           })
           .eq("id", escrowId)
           .select("*")
           .limit(1);
         if (updateErr) throw updateErr;
-        const row = (data?.[0] ?? null) as EscrowTransaction | null;
-        if (!row) throw new Error("Escrow update failed");
-
-        const { data: updatedRows, error: followErr } = await supabase
-          .from("escrow_transactions")
-          .update({ status: "pending_admin_release" })
-          .eq("id", escrowId)
-          .select("*")
-          .limit(1);
-        if (followErr) throw followErr;
-        const updated = (updatedRows?.[0] ?? null) as EscrowTransaction | null;
+        const updated = (data?.[0] ?? null) as EscrowTransaction | null;
         if (!updated) throw new Error("Escrow update failed");
         return updated;
       } catch (e: any) {

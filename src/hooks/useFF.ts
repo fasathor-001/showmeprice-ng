@@ -54,8 +54,16 @@ export function useFF() {
   };
 
   // Compatibility aliases
-  const messaging = ready ? isEnabled("in_app_messaging_enabled", false) : false;
-  const chatFiltering = ready ? isEnabled("chat_filtering_enabled", false) : false;
+  const messaging    = ready ? isEnabled("in_app_messaging_enabled", true)  : true;  // always-on default
+  const chatFiltering = ready ? isEnabled("chat_filtering_enabled", false)  : false;
+  const deals         = ready ? isEnabled("deals_enabled", false)           : false;
+  const dealsPosting  = ready ? isEnabled("deals_posting_enabled", false)   : false;
+  const delivery      = ready ? isEnabled("delivery_enabled", false)        : false;
+  const institution   = ready ? isEnabled("institution_tools_enabled", false) : false;
+  const escrow        = ready ? isEnabled("escrow_enabled", false)          : false;
+  const makeOffer     = ready ? isEnabled("make_offer_enabled", true)       : true;  // on by default
+  const phoneCall     = ready ? isEnabled("phone_call_enabled", false)      : false;
+  const whatsapp      = ready ? isEnabled("whatsapp_contact_enabled", false) : false;
 
   return useMemo(
     () => ({
@@ -63,13 +71,18 @@ export function useFF() {
       error,
       flags,
       isEnabled,
-      // common keys
       messaging,
       chatFiltering,
-      deals: ready ? isEnabled("deals_enabled", false) : false,
-      dealsPosting: ready ? isEnabled("deals_posting_enabled", false) : false,
-      delivery: ready ? isEnabled("delivery_enabled", false) : false,
+      deals,
+      dealsPosting,
+      delivery,
+      institution,
+      escrow,
+      makeOffer,
+      phoneCall,
+      whatsapp,
     }),
-    [ready, error, flags, messaging, chatFiltering]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ready, error, flags]
   );
 }

@@ -10,7 +10,9 @@ export type DealProduct = {
   created_at?: string | null;
   is_deal?: boolean | null;
   deal_season?: string | null;
-  is_active?: boolean | null;
+  status?: string | null;
+  seller_business_name?: string | null;
+  business_name?: string | null;
   businesses?: { business_name?: string | null; verification_tier?: string | null } | null;
   states?: { name?: string | null } | null;
   categories?: { name?: string | null } | null;
@@ -76,14 +78,16 @@ export function useDealProducts(options?: UseDealProductsOptions) {
               created_at,
               is_deal,
               deal_season,
-              is_active,
+              status,
+              seller_business_name,
+              business_name,
               businesses ( business_name, verification_tier ),
               states ( name ),
               categories ( name )
             `
           )
           .eq("is_deal", true)
-          .eq("is_active", true)
+          .eq("status", "active")
           .order("created_at", { ascending: false })
           .range(from, to);
 
@@ -102,7 +106,14 @@ export function useDealProducts(options?: UseDealProductsOptions) {
         setDeals((prev) => (mode === "replace" ? rows : [...prev, ...rows]));
         setHasMore(rows.length === pageSize);
       } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : "Failed to load deals";
+        const err = e as any;
+        console.error("[useDealProducts] fetch error", {
+          message: err?.message,
+          code: err?.code,
+          details: err?.details,
+          hint: err?.hint,
+        });
+        const message = err?.message || "Failed to load deals";
         setError(message);
       } finally {
         setFetching(false);

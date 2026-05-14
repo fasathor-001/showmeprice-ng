@@ -37,6 +37,9 @@ export function useSeller() {
         error = byUser.error;
 
         if (!data && !error) {
+          // Legacy fallback: some rows use owner_id instead of user_id.
+          // TODO: run a one-time migration: UPDATE businesses SET user_id = owner_id WHERE user_id IS NULL;
+          // Then drop the owner_id column and remove this block.
           const byOwner = await supabase
             .from("businesses")
             .select("*, verification_tier, verification_status")

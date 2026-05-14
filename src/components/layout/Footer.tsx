@@ -1,11 +1,19 @@
-﻿// src/components/layout/Footer.tsx
+// src/components/layout/Footer.tsx
 import React from "react";
 import { Facebook, Instagram, Twitter, Linkedin, Youtube, Music2 } from "lucide-react";
+
+function nav(to: string) {
+  try {
+    if (window.location.pathname !== to) window.history.pushState({}, "", to);
+    window.dispatchEvent(new Event("smp:navigate"));
+  } catch {
+    window.location.href = to;
+  }
+}
 
 export default function Footer() {
   const year = new Date().getFullYear();
   const footerBrand = "/footer-brand.png";
-
 
   const SOCIALS = [
     { name: "Facebook", href: "https://www.facebook.com/showmeprice_ng", Icon: Facebook },
@@ -22,7 +30,6 @@ export default function Footer() {
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Brand */}
           <div className="lg:col-span-5">
-            {/* ✅ move logo + slogan block slightly right */}
             <div className="pl-3 sm:pl-4">
               <div className="flex items-center mb-3">
                 <img
@@ -37,7 +44,7 @@ export default function Footer() {
               </div>
 
               <p className="text-slate-300 text-xs leading-relaxed max-w-md">
-                Nigeria’s marketplace for transparent pricing and verified listings—built to help buyers compare
+                Nigeria's marketplace for transparent pricing and verified listings—built to help buyers compare
                 confidently and connect with trusted sellers.
               </p>
 
@@ -71,127 +78,184 @@ export default function Footer() {
           </div>
 
           {/* Links */}
-            <div className="lg:col-span-7">
+          <div className="lg:col-span-7">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-8">
-                {/* ✅ QUICK LINKS (moved to the old For Buyers position) */}
-                <div className="text-left">
+
+              {/* Quick Links */}
+              <div className="text-left">
                 <h4 className="font-black text-sm mb-3 uppercase tracking-wider">Quick Links</h4>
                 <ul className="space-y-2 text-slate-300 text-xs">
-                    <li>
-                    <a href="/" className="hover:text-white hover:underline">
-                        Home
-                    </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        How It Works
-                    </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Sell on ShowMePrice
-                    </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Success Stories
-                    </a>
-                    </li>
+                  <li>
+                    <a href="/" className="hover:text-white hover:underline">Home</a>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/help")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      How It Works
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/seller/setup")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Sell on ShowMePrice
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/marketplace")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Browse Listings
+                    </button>
+                  </li>
                 </ul>
-                </div>
+              </div>
 
-                {/* ✅ FOR BUYERS (moved to the old Quick Links position) */}
-                <div className="text-left">
+              {/* For Buyers */}
+              <div className="text-left">
                 <h4 className="font-black text-sm mb-3 uppercase tracking-wider">For Buyers</h4>
                 <ul className="space-y-2 text-slate-300 text-xs">
-                    <li>
-                    <a href="/#search" className="hover:text-white hover:underline">
-                        Search Products
-                    </a>
-                    </li>
-                    <li>
-                    <a href="/marketplace" className="hover:text-white hover:underline">
-                        Browse Categories
-                    </a>
-                    </li>
-                    <li>
-                    <a href="/deals" className="hover:text-white hover:underline">
-                        Deals
-                    </a>
-                    </li>
-                    <li>
-                    <a href="/delivery" className="hover:text-white hover:underline">
-                        Delivery Info
-                    </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Escrow
-                    </a>
-                    </li>
+                  <li>
+                    <a href="/" className="hover:text-white hover:underline">Search Products</a>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/marketplace")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Browse Categories
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/deals")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Deals
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/delivery")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Delivery Info
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/escrow")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Escrow Protection
+                    </button>
+                  </li>
                 </ul>
-                </div>
+              </div>
 
-                {/* For Sellers */}
-                <div className="text-left">
+              {/* For Sellers */}
+              <div className="text-left">
                 <h4 className="font-black text-sm mb-3 uppercase tracking-wider">For Sellers</h4>
                 <ul className="space-y-2 text-slate-300 text-xs">
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Seller Registration
-                    </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Verification Guide
-                    </a>
-                    </li>
-                    <li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/seller/setup")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Seller Registration
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/account/verification")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Verification Guide
+                    </button>
+                  </li>
+                  <li>
                     <a href="/#pricing" className="hover:text-white hover:underline">
-                        Pricing &amp; Fees
+                      Pricing &amp; Fees
                     </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Seller Protection
-                    </a>
-                    </li>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/help")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Seller Protection
+                    </button>
+                  </li>
                 </ul>
-                </div>
+              </div>
 
-                {/* Help & Legal */}
-                <div className="text-left">
+              {/* Help & Legal */}
+              <div className="text-left">
                 <h4 className="font-black text-sm mb-3 uppercase tracking-wider">Help &amp; Legal</h4>
                 <ul className="space-y-2 text-slate-300 text-xs">
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Help Center / FAQ
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/help")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Help Center / FAQ
+                    </button>
+                  </li>
+                  <li>
+                    <a
+                      href="mailto:support@showmeprice.ng"
+                      className="hover:text-white hover:underline"
+                    >
+                      Contact Us
                     </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Contact Us
-                    </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Terms of Service
-                    </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Privacy Policy
-                    </a>
-                    </li>
-                    <li>
-                    <a href="#" className="hover:text-white hover:underline">
-                        Cookie Policy
-                    </a>
-                    </li>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/terms")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Terms of Service
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/privacy")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Privacy Policy
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => nav("/cookies")}
+                      className="hover:text-white hover:underline text-left"
+                    >
+                      Cookie Policy
+                    </button>
+                  </li>
                 </ul>
-                </div>
+              </div>
+
             </div>
-            </div>
+          </div>
         </div>
 
         <div className="border-t border-slate-800 mt-6 pt-4 text-center text-slate-400 text-xs">

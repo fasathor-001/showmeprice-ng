@@ -42,7 +42,7 @@ const PRODUCT_WITH_BUSINESS_SELECT = `
   *,
   states(name),
   categories(name),
-  businesses:businesses!products_business_id_fkey(id, user_id, business_name, verification_tier, verification_status)
+  businesses(id, user_id, business_name, verification_tier, verification_status)
 `;
 
 function imageToPublicUrl(img: string): string {
@@ -129,6 +129,119 @@ async function attachSellerBadges(rows: any[]): Promise<any[]> {
   }
 }
 
+async function attachSellerNames(rows: any[]): Promise<any[]> {
+  if (!rows.length) return rows;
+  try {
+    // Separate rows that already have a usable name from those that need a lookup
+    const needsName = rows.filter(
+      (r) =>
+        !String(r?.businesses?.business_name ?? "").trim() &&
+        !String(r?.seller_business_name ?? "").trim() &&
+        !String(r?.business_name ?? "").trim() &&
+        !String(r?.seller_display_name ?? "").trim()
+    );
+    if (!needsName.length) return rows;
+
+    // --- Primary path: business_id → businesses.id (direct PK lookup) ---
+    // This is the most reliable because business_id is the actual FK column on products.
+    const businessIds = Array.from(
+      new Set(needsName.map((r) => String(r?.business_id ?? "").trim()).filter(Boolean))
+    );
+
+    // --- Secondary path: owner_id → businesses.user_id (for rows with no business_id) ---
+    const ownerIds = Array.from(
+      new Set(
+        needsName
+          .filter((r) => !String(r?.business_id ?? "").trim())
+          .map((r) => String(r?.owner_id ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    // Maps for resolved names
+    const nameByBizId = new Map<string, string>();  // businesses.id → name
+    const nameByOwnerId = new Map<string, string>(); // businesses.user_id / profiles.id → name
+
+    // Query businesses by PK
+    if (businessIds.length > 0) {
+      const { data } = await supabase
+        .from("businesses")
+        .select("id, user_id, business_name")
+        .in("id", businessIds);
+      for (const row of data ?? []) {
+        const id = String(row?.id ?? "");
+        const uid = String(row?.user_id ?? "");
+        const name = String(row?.business_name ?? "").trim();
+        if (id && name) nameByBizId.set(id, name);
+        // Also register by user_id as bonus so owner_id path benefits too
+        if (uid && name) nameByOwnerId.set(uid, name);
+      }
+    }
+
+    // Query businesses by user_id for the secondary path
+    if (ownerIds.length > 0) {
+      const { data } = await supabase
+        .from("businesses")
+        .select("user_id, business_name")
+        .in("user_id", ownerIds);
+      for (const row of data ?? []) {
+        const uid = String(row?.user_id ?? "");
+        const name = String(row?.business_name ?? "").trim();
+        if (uid && name) nameByOwnerId.set(uid, name);
+      }
+
+      // Legacy path: some businesses rows use owner_id instead of user_id
+      const stillNeedLegacy = ownerIds.filter((id) => !nameByOwnerId.has(id));
+      if (stillNeedLegacy.length > 0) {
+        const { data: legacyRows } = await supabase
+          .from("businesses")
+          .select("owner_id, business_name")
+          .in("owner_id", stillNeedLegacy);
+        for (const row of legacyRows ?? []) {
+          const oid = String((row as any)?.owner_id ?? "");
+          const name = String(row?.business_name ?? "").trim();
+          if (oid && name) nameByOwnerId.set(oid, name);
+        }
+      }
+
+      // Fall back to profiles for any owner_ids still unresolved
+      const stillNeed = ownerIds.filter((id) => !nameByOwnerId.has(id));
+      if (stillNeed.length > 0) {
+        const { data: profRows } = await supabase
+          .from("profiles")
+          .select("id, display_name, full_name")
+          .in("id", stillNeed);
+        for (const row of profRows ?? []) {
+          const id = String(row?.id ?? "");
+          const name =
+            String(row?.display_name ?? "").trim() ||
+            String(row?.full_name ?? "").trim();
+          if (id && name) nameByOwnerId.set(id, name);
+        }
+      }
+    }
+
+    return rows.map((r) => {
+      const existing =
+        String(r?.businesses?.business_name ?? "").trim() ||
+        String(r?.seller_business_name ?? "").trim() ||
+        String(r?.business_name ?? "").trim() ||
+        String(r?.seller_display_name ?? "").trim();
+      if (existing) return r;
+
+      const bizId = String(r?.business_id ?? "").trim();
+      const ownerId = String(r?.owner_id ?? "").trim();
+      const name =
+        (bizId && nameByBizId.get(bizId)) ||
+        (ownerId && nameByOwnerId.get(ownerId)) ||
+        "";
+      return name ? { ...r, seller_display_name: name } : r;
+    });
+  } catch {
+    return rows;
+  }
+}
+
 /**
  * Recent feed (non-deals by default)
  */
@@ -166,7 +279,19 @@ export function useRecentProducts(limit = 24, refreshKey?: number): BaseResult<P
       } else {
         const normalized = normalizeProducts((data ?? []) as any) as any;
         const productsWithBadges = await attachSellerBadges(normalized);
-        setProducts(productsWithBadges as any);
+        const productsWithNames = await attachSellerNames(productsWithBadges);
+        if (process.env.NODE_ENV !== "production" && productsWithNames.length > 0) {
+          const s = productsWithNames[0] as any;
+          console.log("[SMP seller debug] first product seller fields:", {
+            business_id: s.business_id,
+            businesses: s.businesses,
+            seller_business_name: s.seller_business_name,
+            business_name: s.business_name,
+            seller_display_name: s.seller_display_name,
+            seller_name: s.seller_name,
+          });
+        }
+        setProducts(productsWithNames as any);
       }
 
       setLoading(false);
@@ -227,7 +352,8 @@ export function useDealProducts(opts?: { season?: string | null; limit?: number 
       } else {
         const normalized = normalizeProducts((data ?? []) as any) as any;
         const productsWithBadges = await attachSellerBadges(normalized);
-        setProducts(productsWithBadges as any);
+        const productsWithNames = await attachSellerNames(productsWithBadges);
+        setProducts(productsWithNames as any);
       }
 
       setLoading(false);
@@ -316,13 +442,14 @@ export function useProductSearch(initial?: Partial<SearchParams>) {
 
         const normalized = normalizeProducts((data ?? []) as any) as any;
         const pageWithBadges = await attachSellerBadges(normalized);
+        const pageWithNames = await attachSellerNames(pageWithBadges);
 
         setTotal(typeof count === "number" ? count : null);
         setHasMore(((p.page + 1) * p.pageSize) < (count ?? 0));
 
         setResults((prev) => {
-          if (p.page === 0) return pageWithBadges as any;
-          return [...(prev as any), ...(pageWithBadges as any)] as any;
+          if (p.page === 0) return pageWithNames as any;
+          return [...(prev as any), ...(pageWithNames as any)] as any;
         });
       } catch (e: any) {
         setError(toErrorMessage(e));
@@ -428,7 +555,8 @@ export function useSingleProduct(productId: string | number | null) {
         } else {
           const normalized = normalizeProduct(row);
           const productWithBadges = await attachSellerBadges([normalized]);
-          setProduct((productWithBadges[0] ?? null) as any);
+          const productWithNames = await attachSellerNames(productWithBadges);
+          setProduct((productWithNames[0] ?? null) as any);
         }
       }
 

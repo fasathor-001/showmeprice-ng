@@ -6,6 +6,7 @@ import { useAuth } from "../hooks/useAuth";
 import { useFF } from "../hooks/useFF";
 import { useProfile } from "../hooks/useProfile";
 import { supabase } from "../lib/supabase";
+import { invokeAuthedFunction } from "../lib/invokeAuthedFunction";
 
 function nav(to: string) {
   window.history.pushState({}, "", to);
@@ -141,10 +142,11 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
     profile?: Record<string, unknown>;
     business?: Record<string, unknown>;
   };
-  const FF = useFF() as Record<string, unknown>;
+  const FF = useFF() as any;
 
   const messagingEnabled = !!FF?.messaging;
   const chatFilteringEnabled = !!FF?.chatFiltering;
+  const offersEnabled = !!FF?.isEnabled?.("make_offer_enabled", false);
 
   const {
     loading,
@@ -169,6 +171,8 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
 
   const [compose, setCompose] = useState<InboxInit | null>(null);
   const [hasBusiness, _setHasBusiness] = useState<boolean | null>(null);
+  const [activeOffer, setActiveOffer] = useState<any | null>(null);
+  const [offerActioning, setOfferActioning] = useState(false);
   const convIdByKeyRef = useRef<Record<string, string>>({});
   void _setHasBusiness;
 
@@ -242,18 +246,14 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
       try {
         const { data: pubRows } = await supabase
           .from("profiles")
-          .select("id,display_name,full_name,first_name,last_name")
+          .select("id,display_name,full_name")
           .in("id", uniq);
         for (const row of pubRows || []) {
           const id = safeStr((row as Record<string, unknown>).id);
           if (!id) continue;
           const displayName =
             safeStr((row as Record<string, unknown>).display_name) ||
-            safeStr((row as Record<string, unknown>).full_name) ||
-            [safeStr((row as Record<string, unknown>).first_name), safeStr((row as Record<string, unknown>).last_name)]
-              .filter(Boolean)
-              .join(" ")
-              .trim();
+            safeStr((row as Record<string, unknown>).full_name);
           profMap[id] = { displayName };
         }
         const { data: bizRows } = await supabase
@@ -331,6 +331,65 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
       cancelled = true;
     };
   }, [currentProductId]);
+
+  // Load the active offer for the current conversation (if offers feature is on)
+  useEffect(() => {
+    if (!offersEnabled || !user?.id || !currentProductId || !activeConversationId) {
+      setActiveOffer(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("offers")
+        .select("id, status, payment_status, offer_amount_kobo, accepted_amount_kobo, buyer_id, seller_id")
+        .eq("product_id", currentProductId)
+        .or(`buyer_id.eq.${user.id},seller_id.eq.${user.id}`)
+        .in("status", ["pending", "accepted", "countered", "paid"])
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!cancelled) setActiveOffer(data ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [offersEnabled, activeConversationId, currentProductId, user?.id]);
+
+  const handleOfferAction = async (action: "accept" | "decline") => {
+    if (!activeOffer || offerActioning) return;
+    setOfferActioning(true);
+    try {
+      const { error } = await invokeAuthedFunction("offer_action", {
+        body: { offerId: activeOffer.id, action },
+      });
+      if (error) throw error;
+      setActiveOffer((o: any) =>
+        o ? { ...o, status: action === "accept" ? "accepted" : "declined" } : o
+      );
+      emitToast("success", action === "accept" ? "Offer accepted." : "Offer rejected.");
+    } catch (err: any) {
+      emitToast("error", err?.message ?? "Action failed.");
+    } finally {
+      setOfferActioning(false);
+    }
+  };
+
+  const handleOfferPay = async () => {
+    if (!activeOffer || offerActioning) return;
+    setOfferActioning(true);
+    try {
+      const { data, error } = await invokeAuthedFunction("offer_payment_init", {
+        body: { offerId: activeOffer.id, idempotencyKey: crypto.randomUUID() },
+      });
+      if (error) throw error;
+      const url = String((data as any)?.authorizationUrl ?? "");
+      if (!url) throw new Error("Payment link missing.");
+      window.location.href = url;
+    } catch (err: any) {
+      emitToast("error", err?.message ?? "Failed to start payment.");
+    } finally {
+      setOfferActioning(false);
+    }
+  };
 
   const threadMessages = useMemo(() => {
     return activeConversationId ? messagesByConversationId[activeConversationId] ?? [] : [];
@@ -740,6 +799,82 @@ export default function InboxPage({ initialChat }: { initialChat?: InboxInit }) 
                   {threadMessages.length === 0 ? (
                     <div className="text-sm text-slate-600">No messages yet. Send the first message.</div>
                   ) : null}
+
+                  {/* Inline offer action card */}
+                  {activeOffer && (() => {
+                    const offerStatus = String(activeOffer.status ?? "").toLowerCase();
+                    const payStatus = String(activeOffer.payment_status ?? "").toLowerCase();
+                    const isOfferSeller = activeOffer.seller_id === user.id;
+                    const isOfferBuyer = activeOffer.buyer_id === user.id;
+                    const amountKobo = activeOffer.accepted_amount_kobo ?? activeOffer.offer_amount_kobo ?? 0;
+                    const amountNgn = Number(amountKobo) / 100;
+                    const isPaid = offerStatus === "paid" || payStatus === "paid";
+                    const canAction = isOfferSeller && offerStatus === "pending";
+                    const canPay = isOfferBuyer && offerStatus === "accepted" && !isPaid;
+                    const awaitingPayment = isOfferSeller && offerStatus === "accepted" && !isPaid;
+
+                    if (!canAction && !canPay && !awaitingPayment) return null;
+
+                    return (
+                      <div className={`rounded-2xl border overflow-hidden shadow-sm ${offerStatus === "accepted" ? "border-emerald-300" : "border-amber-200"}`}>
+                        <div className={`px-4 py-2 text-xs font-black ${offerStatus === "accepted" ? "bg-emerald-600 text-white" : "bg-amber-50 text-amber-800"}`}>
+                          {offerStatus === "pending" ? "⏳ Pending Offer" : "✓ Offer Accepted"}
+                        </div>
+                        <div className="p-4 space-y-3 bg-white">
+                          <div className="flex items-center justify-between rounded-xl bg-slate-50 border border-slate-100 px-4 py-2.5">
+                            <span className="text-xs text-slate-500 font-medium">
+                              {offerStatus === "accepted" ? "Agreed amount" : "Offer amount"}
+                            </span>
+                            <span className="text-lg font-black text-slate-900">
+                              {formatMoney(amountNgn)}
+                            </span>
+                          </div>
+
+                          {canAction ? (
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleOfferAction("accept")}
+                                disabled={offerActioning}
+                                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-black hover:bg-emerald-700 disabled:opacity-60 transition"
+                              >
+                                {offerActioning ? "Working..." : "Accept Offer"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOfferAction("decline")}
+                                disabled={offerActioning}
+                                className="flex-1 py-2.5 rounded-xl border-2 border-rose-200 text-sm font-black text-rose-600 hover:bg-rose-50 disabled:opacity-60 transition"
+                              >
+                                Reject Offer
+                              </button>
+                            </div>
+                          ) : canPay ? (
+                            <div className="space-y-2">
+                              <button
+                                type="button"
+                                onClick={handleOfferPay}
+                                disabled={offerActioning}
+                                className="w-full py-3 rounded-xl bg-emerald-600 text-white font-black text-sm hover:bg-emerald-700 disabled:opacity-60 transition flex items-center justify-center gap-2"
+                              >
+                                {"🔒"}{" "}
+                                {offerActioning
+                                  ? "Starting payment..."
+                                  : `Pay with Escrow Protection (${formatMoney(amountNgn)})`}
+                              </button>
+                              <p className="text-xs text-center text-slate-400">
+                                Secure payment — seller is paid only after you confirm delivery.
+                              </p>
+                            </div>
+                          ) : awaitingPayment ? (
+                            <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 font-semibold">
+                              {"✓"} Accepted — awaiting buyer payment
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {threadMessages.map((m: ChatMessage) => {
                     const mine = m.sender_id === user.id;

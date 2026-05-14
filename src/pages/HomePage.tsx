@@ -541,13 +541,6 @@ export default function HomePage() {
       tier === "verified" ||
       tier === "premium";
     const isPremiumSeller = tier === "premium";
-    const verificationLabel = isVerified
-      ? "Verified"
-      : verificationStatus === "pending"
-      ? "Pending"
-      : verificationStatus === "rejected"
-      ? "Rejected"
-      : "Unverified";
 
     const hasDiscount =
       (product as any).original_price && (product as any).original_price > (product as any).price;
@@ -561,10 +554,15 @@ export default function HomePage() {
     const stateName = (product as any)?.states?.name ? String((product as any).states.name).trim() : "";
     const city = (product as any)?.city ? String((product as any).city).trim() : "";
 
+    const p = product as any;
     const businessName =
-      (product as any)?.businesses?.business_name ||
-      (product as any)?.business?.business_name ||
-      (product as any)?.business_name ||
+      String(p?.seller_business_name ?? "").trim() ||
+      String(p?.business_name ?? "").trim() ||
+      String(p?.businesses?.business_name ?? "").trim() ||
+      String(p?.businesses?.name ?? "").trim() ||
+      String(p?.seller_display_name ?? "").trim() ||
+      String(p?.seller_name ?? "").trim() ||
+      String(p?.profiles?.full_name ?? "").trim() ||
       "";
 
     return (
@@ -573,7 +571,7 @@ export default function HomePage() {
         onClick={() => openProductModal(product)}
         className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition cursor-pointer group flex flex-col h-full"
       >
-        <div className="h-44 md:h-48 bg-slate-200 relative overflow-hidden flex-shrink-0">
+        <div className="aspect-[4/3] bg-slate-200 relative overflow-hidden flex-shrink-0">
           {(product as any).images && Array.isArray((product as any).images) && (product as any).images.length > 0 ? (
             <img
               src={(product as any).images[0]}
@@ -635,8 +633,8 @@ export default function HomePage() {
 
               <div className="min-w-0 leading-tight">
                 <div className="truncate max-w-[120px] font-semibold text-slate-700">{businessName || "Seller"}</div>
-                {businessName ? (
-                  <div className="truncate max-w-[120px] text-slate-500">{verificationLabel}</div>
+                {isVerified ? (
+                  <div className="text-[10px] font-bold text-brand leading-tight">Verified</div>
                 ) : null}
               </div>
             </div>

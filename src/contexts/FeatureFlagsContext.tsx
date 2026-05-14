@@ -1,4 +1,4 @@
-﻿import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useProfile } from "../hooks/useProfile";
 
@@ -10,6 +10,7 @@ export type FeatureFlagKey =
   | "escrow_enabled"
   | "in_app_messaging_enabled"
   | "institution_tools_enabled"
+  | "make_offer_enabled"
   | "phone_call_enabled"
   | "whatsapp_contact_enabled"
   | string;
@@ -27,26 +28,20 @@ type Ctx = {
   loading: boolean;
   error: string | null;
   refresh: () => Promise<void>;
-  // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars
   getFlag: (key: FeatureFlagKey) => FeatureFlagRow | undefined;
-  // eslint-disable-next-line no-unused-vars, @typescript-eslint/no-unused-vars
   isEnabled: (key: FeatureFlagKey) => boolean;
+  flagList: FeatureFlagRow[];
 };
 
 const FeatureFlagsContext = createContext<Ctx | null>(null);
-
-function safeBool(v: any) {
-  return v === true;
-}
 
 export function FeatureFlagsProvider({ children }: { children: React.ReactNode }) {
   const { profile, loading: profileLoading } = useProfile();
   const role = (profile as any)?.role ?? "user";
   const isAuthenticated = !profileLoading && !!profile;
 
-  // best-effort premium/institution detection (doesn't break if your schema differs)
   const isPremium =
-    safeBool((profile as any)?.is_premium) ||
+    (profile as any)?.is_premium === true ||
     (profile as any)?.membership_tier === "premium";
 
   const isInstitution =
@@ -75,46 +70,35 @@ export function FeatureFlagsProvider({ children }: { children: React.ReactNode }
     setLoading(true);
     setError(null);
     try {
-      const { data, error } = await supabase
+      const { data, error: fetchErr } = await supabase
         .from("feature_flags")
         .select("key, enabled, description, visible_to, updated_at")
         .order("key", { ascending: true });
 
-      if (error) throw error;
+      if (fetchErr) throw fetchErr;
 
       if (!Array.isArray(data)) {
         setFlags([]);
-        
-try { window.dispatchEvent(new Event("smp:flags-updated")); } catch { // intentionally empty
-}
-try { window.dispatchEvent(new Event("smp:flags-updated")); try { window.dispatchEvent(new Event("smp:flags-updated")); } catch { // intentionally empty
-}
-} catch { // intentionally empty
-}
-setError("feature_flags returned unexpected data (not an array). Check RLS/policies.");
+        setError("feature_flags returned unexpected data. Check RLS/policies.");
         return;
       }
 
       setFlags(data as FeatureFlagRow[]);
-    try { window.dispatchEvent(new Event("smp:flags-updated")); try { window.dispatchEvent(new Event("smp:flags-updated")); } catch { // intentionally empty
-}
-} catch { // intentionally empty
-}
-} catch (e: any) {
+    } catch (e: any) {
       console.error("FeatureFlags fetch failed:", e);
       setFlags([]);
-      try { window.dispatchEvent(new Event("smp:flags-updated")); try { window.dispatchEvent(new Event("smp:flags-updated")); } catch { // intentionally empty
-}
-} catch { // intentionally empty
-}
-setError(e?.message ?? String(e));
+      setError(e?.message ?? String(e));
     } finally {
       setLoading(false);
+      try {
+        window.dispatchEvent(new Event("smp:flags-updated"));
+      } catch {
+        // intentionally empty
+      }
     }
   }, []);
 
   useEffect(() => {
-    // load once; re-fetch when profile becomes available is optional
     refresh();
   }, [refresh]);
 
@@ -124,10 +108,14 @@ setError(e?.message ?? String(e));
     return m;
   }, [flags]);
 
-  const getFlag = useCallback((key: FeatureFlagKey) => flagsByKey.get(String(key)), [flagsByKey]);
+  const getFlag = useCallback(
+    (key: FeatureFlagKey) => flagsByKey.get(String(key)),
+    [flagsByKey]
+  );
 
   const isEnabled = useCallback(
     (key: FeatureFlagKey) => {
+      if (key === "in_app_messaging_enabled") return true; // always on
       const f = flagsByKey.get(String(key));
       if (!f) return false;
       if (!f.enabled) return false;
@@ -138,7 +126,7 @@ setError(e?.message ?? String(e));
   );
 
   const value: Ctx = useMemo(
-    () => ({ flags, loading, error, refresh, getFlag, isEnabled }),
+    () => ({ flags, flagList: flags, loading, error, refresh, getFlag, isEnabled }),
     [flags, loading, error, refresh, getFlag, isEnabled]
   );
 
@@ -150,6 +138,3 @@ export function useFeatureFlags() {
   if (!ctx) throw new Error("useFeatureFlags must be used within FeatureFlagsProvider");
   return ctx;
 }
-
-
-

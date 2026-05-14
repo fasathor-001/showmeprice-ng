@@ -1,6 +1,6 @@
 
 -- ============================================================================
--- PHASE 4 MIGRATION: FEATURE FLAGS & AUDIT
+-- PHASE 4 MIGRATION: FEATURE FLAGS & AUDIT  (corrected — run full file)
 -- Run this in Supabase SQL Editor
 -- ============================================================================
 
@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS public.feature_flags (
     key TEXT PRIMARY KEY,
     enabled BOOLEAN NOT NULL DEFAULT FALSE,
     description TEXT,
-    visible_to TEXT NOT NULL DEFAULT 'all', -- 'all', 'authenticated', 'premium', 'admin'
+    visible_to TEXT NOT NULL DEFAULT 'all',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -20,18 +20,22 @@ CREATE TABLE IF NOT EXISTS public.feature_flags (
 CREATE TABLE IF NOT EXISTS public.feature_flag_audit (
     id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
     flag_key TEXT REFERENCES public.feature_flags(key) ON DELETE CASCADE,
-    changed_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+    changed_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     from_enabled BOOLEAN,
     to_enabled BOOLEAN,
     note TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 2a. Add flag_key column if it was created without it (idempotent)
+ALTER TABLE public.feature_flag_audit
+ADD COLUMN IF NOT EXISTS flag_key TEXT REFERENCES public.feature_flags(key) ON DELETE CASCADE;
+
 -- 3. Enable RLS
 ALTER TABLE public.feature_flags ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.feature_flag_audit ENABLE ROW LEVEL SECURITY;
 
--- 4. RLS Policies
+-- 4. RLS Policies (uses public.profiles — NOT public.users)
 
 -- Feature Flags: Everyone can read
 DROP POLICY IF EXISTS "Public Read Feature Flags" ON public.feature_flags;
@@ -39,19 +43,19 @@ CREATE POLICY "Public Read Feature Flags"
 ON public.feature_flags FOR SELECT
 USING (true);
 
--- Feature Flags: Only Admins can update
+-- Feature Flags: Only Admins can insert/update/delete
 DROP POLICY IF EXISTS "Admins Manage Feature Flags" ON public.feature_flags;
 CREATE POLICY "Admins Manage Feature Flags"
 ON public.feature_flags FOR ALL
 USING (
   EXISTS (
-    SELECT 1 FROM public.users
+    SELECT 1 FROM public.profiles
     WHERE id = auth.uid() AND role = 'admin'
   )
 )
 WITH CHECK (
   EXISTS (
-    SELECT 1 FROM public.users
+    SELECT 1 FROM public.profiles
     WHERE id = auth.uid() AND role = 'admin'
   )
 );
@@ -62,7 +66,7 @@ CREATE POLICY "Admins Read Audit Logs"
 ON public.feature_flag_audit FOR SELECT
 USING (
   EXISTS (
-    SELECT 1 FROM public.users
+    SELECT 1 FROM public.profiles
     WHERE id = auth.uid() AND role = 'admin'
   )
 );
@@ -73,12 +77,23 @@ CREATE POLICY "Admins Insert Audit Logs"
 ON public.feature_flag_audit FOR INSERT
 WITH CHECK (
   EXISTS (
-    SELECT 1 FROM public.users
+    SELECT 1 FROM public.profiles
     WHERE id = auth.uid() AND role = 'admin'
   )
 );
 
--- 5. Trigger for updated_at
+-- Audit Logs: Only Admins can delete
+DROP POLICY IF EXISTS "Admins Delete Audit Logs" ON public.feature_flag_audit;
+CREATE POLICY "Admins Delete Audit Logs"
+ON public.feature_flag_audit FOR DELETE
+USING (
+  EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role = 'admin'
+  )
+);
+
+-- 5. Trigger for updated_at on feature_flags
 CREATE OR REPLACE FUNCTION public.update_timestamp()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -92,19 +107,7 @@ CREATE TRIGGER update_feature_flags_mod
 BEFORE UPDATE ON public.feature_flags
 FOR EACH ROW EXECUTE PROCEDURE public.update_timestamp();
 
--- 6. Seed Initial Flags
-INSERT INTO public.feature_flags (key, enabled, description, visible_to)
-VALUES
-    ('escrow_enabled', FALSE, 'Enable Escrow payment services', 'all'),
-    ('institution_tools_enabled', FALSE, 'Enable RFQ and Procurement tools for Institutions', 'all'),
-    ('phone_call_enabled', FALSE, 'Allow Premium users to see Phone Numbers', 'premium'),
-    ('whatsapp_contact_enabled', FALSE, 'Allow Premium users to see WhatsApp links', 'premium'),
-    ('chat_filtering_enabled', FALSE, 'Block phone numbers and links in chat for Free users', 'admin'),
-    ('in_app_messaging_enabled', TRUE, 'Core messaging functionality', 'all')
-ON CONFLICT (key) DO UPDATE
-SET description = EXCLUDED.description;
-
--- 7. Safety Trigger: Prevent disabling in_app_messaging
+-- 6. Safety Trigger: Prevent disabling in_app_messaging
 CREATE OR REPLACE FUNCTION public.prevent_core_feature_disable()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -119,5 +122,26 @@ DROP TRIGGER IF EXISTS protect_core_features ON public.feature_flags;
 CREATE TRIGGER protect_core_features
 BEFORE UPDATE ON public.feature_flags
 FOR EACH ROW EXECUTE PROCEDURE public.prevent_core_feature_disable();
+
+-- 7. Seed ALL flags used by the application
+--    ON CONFLICT: updates description + visible_to only — preserves your live enabled values
+INSERT INTO public.feature_flags (key, enabled, description, visible_to)
+VALUES
+    ('chat_filtering_enabled',    FALSE, 'Block phone numbers and links in chat for free users',             'admin'),
+    ('deals_enabled',             FALSE, 'Show the Deals section to buyers',                                 'all'),
+    ('deals_posting_enabled',     FALSE, 'Allow sellers to post deals during an active Deal Season',         'all'),
+    ('delivery_enabled',          FALSE, 'Enable delivery and logistics features',                           'all'),
+    ('escrow_enabled',            FALSE, 'Enable escrow payment protection for buyers',                      'all'),
+    ('in_app_messaging_enabled',  TRUE,  'Core in-app messaging — always on, cannot be disabled',           'all'),
+    ('institution_tools_enabled', FALSE, 'Enable RFQ and procurement tools for institution accounts',        'all'),
+    ('make_offer_enabled',        TRUE,  'Allow buyers to make offers on listings',                          'all'),
+    ('phone_call_enabled',        FALSE, 'Allow premium users to reveal seller phone numbers',               'premium'),
+    ('whatsapp_contact_enabled',  FALSE, 'Allow premium users to reveal seller WhatsApp links',              'premium')
+ON CONFLICT (key) DO UPDATE
+SET description = EXCLUDED.description,
+    visible_to  = EXCLUDED.visible_to;
+-- NOTE: enabled is intentionally NOT updated here to preserve live settings.
+-- To force-reset a flag's enabled state, run separately:
+--   UPDATE public.feature_flags SET enabled = <true|false> WHERE key = '<key>';
 
 COMMIT;
