@@ -249,12 +249,16 @@ export default function Navbar() {
       String((profile as any)?.role ?? "").toLowerCase() === "admin" ||
       String((profile as any)?.user_type ?? "").toLowerCase() === "admin" ||
       role === "admin");
+  // Phase 2.1 — consolidated role read; previous source was profileReady (false during cache-warm
+  // initial render), which fell back to stale smp:role_hint. Now treat cached profile data as
+  // loaded for role checks so getEffectiveUserType reads profile.user_type directly.
+  const profileLoadedForRole = signedIn && (profile != null || !profileLoading);
   const accountStatus = getAccountStatus({
     profile,
     user: authUser,
     hasBusiness,
     isAdminRole,
-    profileLoaded: profileReady,
+    profileLoaded: profileLoadedForRole,
   });
   const userType = accountStatus.effectiveType ?? "";
   if (authUser?.id && accountStatus.ready && userType) setRoleHint(authUser.id, userType as any);
@@ -704,19 +708,20 @@ export default function Navbar() {
                         Help &amp; Support
                       </button>
 
-                      {!isSeller && !isAdmin && (
+                      {/* Phase 2.1 — consolidated role read; previous source omitted accountStatus.ready
+                          guard so the item rendered while role was still resolving (isSeller=false).
+                          Now mirrors the mobile menu's profileReady guard. */}
+                      {accountStatus.ready && !isSeller && !isAdmin && (
                         <button
                           type="button"
                           onClick={() => {
                             setAccountOpen(false);
                             handleBecomeSeller();
                           }}
-                          className={`w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold ${
-                            accountStatus.ready ? "text-slate-800 hover:bg-slate-50" : "text-slate-400 cursor-not-allowed"
-                          }`}
+                          className="w-full flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-slate-800 hover:bg-slate-50"
                         >
                           <Icon name="store" />
-                          {accountStatus.ready ? "Become a Seller" : "Checking..."}
+                          Become a Seller
                         </button>
                       )}
 
