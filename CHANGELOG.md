@@ -4,6 +4,45 @@ Most recent entry first.
 
 ---
 
+## 2026-05-14 — Phase 1: Launch-Ready Core Flows (5 fixes, 5 commits)
+
+Five production-blocking issues resolved. No new dependencies introduced.
+No schema migrations.
+
+Fixes:
+  1. Add /reset-password route — users clicking Supabase password reset
+     emails now land on a functional form instead of a 404. Page handles
+     PASSWORD_RECOVERY event, updates password via updateUser, redirects
+     home on success, shows expired-link screen for invalid tokens.
+     (src/pages/ResetPasswordPage.tsx, src/App.tsx)
+
+  2. EscrowSalesPage seller filter — sellers could see all escrow orders
+     across all users. Added .eq("seller_id", currentUserId) to the
+     EscrowSalesPage query. Data isolation bug closed.
+     (src/pages/EscrowSalesPage.tsx)
+
+  3. Production verification audit — pre-launch checkpoint document
+     created covering chat_filter edge function deployment, RESEND_API_KEY,
+     pg_cron escrow expiry, owner_id migration, May 2026 migrations, and
+     Paystack key prefix. 3 owner-action items identified.
+     (docs/PROD_AUDIT_2026-05-14.md)
+
+  4. WhatsApp contact reveal fix — FF.whatsapp_number (always undefined)
+     changed to FF.whatsapp (correct useFF export) in useContactReveal.ts
+     and useSellerContact.ts. WhatsApp reveals were silently blocked for
+     all Pro+ users regardless of feature flag state.
+     (src/hooks/useContactReveal.ts, src/hooks/useSellerContact.ts)
+
+  5. SEO description cleanup — replaced literal "whatsapp_number" DB column
+     name leak in the default site-wide meta description with proper copy.
+     (src/components/common/SEO.tsx)
+
+KNOWN_ISSUES.md: Items #2, #3 marked RESOLVED. Item #18 added (EscrowSalesPage
+data isolation — retroactive, marked resolved). EscrowOrdersPage buyer-side
+filter gap noted but not fixed (out of scope).
+
+---
+
 ## 2026-05-11 — Knowledge base initialization
 
 Established CLAUDE.md operating system on existing project. Documentation and
